@@ -1,9 +1,5 @@
 import { create } from 'zustand';
-import axios from 'axios';
-
-const api = axios.create({
-  baseURL: '/api',
-});
+import api from '../services/api';
 
 const useAuthStore = create((set, get) => {
   const token = localStorage.getItem('breedads_token');
@@ -15,49 +11,24 @@ const useAuthStore = create((set, get) => {
     parsedUser = null;
   }
 
-  api.interceptors.request.use((config) => {
-    const currentToken = get().token;
-    if (currentToken) {
-      config.headers.Authorization = `Bearer ${currentToken}`;
-    }
-    return config;
-  });
-
-  api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      if (error.response?.status === 401 && error.config?.url !== '/auth/login' && error.config?.url !== '/auth/register') {
-        get().logout();
-        window.location.href = '/login';
-      }
-      return Promise.reject(error);
-    }
-  );
-
   return {
     user: parsedUser,
     token: token || null,
     loading: false,
     error: null,
 
-    get isAuthenticated() {
-      return !!this.token && !!this.user;
-    },
-
-    setLoading: (loading) => set({ loading }),
-    setError: (error) => set({ error }),
-
     login: async (email, password) => {
       set({ loading: true, error: null });
       try {
-        const res = await api.post('/auth/login', { email, password });
-        const { token: newToken, user } = res.data;
+        const data = await api.post('/auth/login', { email, password });
+        const user = data.user;
+        const newToken = data.token;
         localStorage.setItem('breedads_token', newToken);
         localStorage.setItem('breedads_user', JSON.stringify(user));
         set({ user, token: newToken, loading: false, error: null });
         return { success: true };
       } catch (error) {
-        const message = error.response?.data?.error || error.response?.data?.message || 'Login failed';
+        const message = error?.error || error?.message || 'Login failed';
         set({ loading: false, error: message });
         return { success: false, error: message };
       }
@@ -66,14 +37,15 @@ const useAuthStore = create((set, get) => {
     register: async (userData) => {
       set({ loading: true, error: null });
       try {
-        const res = await api.post('/auth/register', userData);
-        const { token: newToken, user } = res.data;
+        const data = await api.post('/auth/register', userData);
+        const user = data.user;
+        const newToken = data.token;
         localStorage.setItem('breedads_token', newToken);
         localStorage.setItem('breedads_user', JSON.stringify(user));
         set({ user, token: newToken, loading: false, error: null });
         return { success: true };
       } catch (error) {
-        const message = error.response?.data?.error || error.response?.data?.message || 'Registration failed';
+        const message = error?.error || error?.message || 'Registration failed';
         set({ loading: false, error: message });
         return { success: false, error: message };
       }
@@ -88,13 +60,13 @@ const useAuthStore = create((set, get) => {
     updateProfile: async (profileData) => {
       set({ loading: true, error: null });
       try {
-        const { data } = await api.put('/auth/profile', profileData);
-        const updatedUser = data.data || data;
+        const data = await api.put('/auth/me', profileData);
+        const updatedUser = data.user || data;
         localStorage.setItem('breedads_user', JSON.stringify(updatedUser));
         set({ user: updatedUser, loading: false });
         return { success: true };
       } catch (error) {
-        const message = error.response?.data?.message || 'Update failed';
+        const message = error?.error || error?.message || 'Update failed';
         set({ loading: false, error: message });
         return { success: false, error: message };
       }
@@ -102,12 +74,12 @@ const useAuthStore = create((set, get) => {
 
     fetchProfile: async () => {
       try {
-        const { data } = await api.get('/auth/me');
-        const user = data.data || data;
+        const data = await api.get('/auth/me');
+        const user = data.user || data;
         localStorage.setItem('breedads_user', JSON.stringify(user));
         set({ user });
       } catch {
-        // silently fail, interceptor handles 401
+        // silently fail
       }
     },
   };

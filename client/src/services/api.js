@@ -18,15 +18,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const url = error.config?.url || '';
-    const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
-    if (error.response?.status === 401 && !isAuthRoute) {
-      localStorage.removeItem('breedads_token');
-      localStorage.removeItem('breedads_user');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-    }
     return Promise.reject(error.response?.data || error);
   }
 );
