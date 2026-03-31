@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm-9_x", "vips"]
+nixPkgs = ["nodejs_20", "npm-9_x", "openssl", "vips"]
 
 [phases.install]
 cmds = [
@@ -12,3 +12,6 @@ cmds = ["cd client && npm run build"]
 
 [start]
 cmd = "cd server && npx prisma migrate deploy && node index.js"
+
+[variables]
+PRISMA_ENGINES_MIRROR = "https://binaries.prisma.sh"

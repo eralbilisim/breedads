@@ -1,12 +1,16 @@
-FROM node:20-alpine AS base
+FROM node:20-bookworm-slim AS base
 
-# Install dependencies for sharp
-RUN apk add --no-cache vips-dev build-base python3
+# Install OpenSSL + build deps for sharp and Prisma
+RUN apt-get update && apt-get install -y \
+    openssl \
+    libssl-dev \
+    ca-certificates \
+    libvips-dev \
+    build-essential \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Copy root package files
-COPY package.json ./
 
 # Copy server package files
 COPY server/package.json ./server/
@@ -26,9 +30,14 @@ COPY . .
 RUN cd client && npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:20-bookworm-slim AS production
 
-RUN apk add --no-cache vips
+RUN apt-get update && apt-get install -y \
+    openssl \
+    libssl3 \
+    ca-certificates \
+    libvips42 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -42,5 +51,4 @@ ENV PORT=3001
 
 EXPOSE 3001
 
-# Run migrations and start server
 CMD ["sh", "-c", "cd server && npx prisma migrate deploy && node index.js"]
