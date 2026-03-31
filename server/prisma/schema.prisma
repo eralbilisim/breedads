@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  company       String?
+  avatar        String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  adAccounts    AdAccount[]
+  campaigns     Campaign[]
+  automations   AutomationRule[]
+  creatives     Creative[]
+  landingPages  LandingPage[]
+  competitors   CompetitorReport[]
+  notifications Notification[]
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model AdAccount {
+  id              String      @id @default(cuid())
+  userId          String
+  platform        Platform
+  accountId       String
+  accountName     String
+  accessToken     String
+  refreshToken    String?
+  tokenExpiresAt  DateTime?
+  isActive        Boolean     @default(true)
+  currency        String      @default("USD")
+  timezone        String      @default("UTC")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns       Campaign[]
+
+  @@unique([platform, accountId])
+}
+
+enum Platform {
+  META
+  GOOGLE
+}
+
+model Campaign {
+  id              String          @id @default(cuid())
+  userId          String
+  adAccountId     String
+  platform        Platform
+  platformCampaignId String?
+  name            String
+  objective       CampaignObjective
+  status          CampaignStatus  @default(DRAFT)
+  budget          Float
+  budgetType      BudgetType      @default(DAILY)
+  startDate       DateTime?
+  endDate         DateTime?
+  targeting       Json?
+  settings        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adAccount       AdAccount       @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  adSets          AdSet[]
+  analytics       CampaignAnalytics[]
+  automations     AutomationRule[]
+}
+
+enum CampaignObjective {
+  AWARENESS
+  TRAFFIC
+  ENGAGEMENT
+  LEADS
+  APP_PROMOTION
+  SALES
+  CONVERSIONS
+  VIDEO_VIEWS
+  MESSAGES
+  STORE_TRAFFIC
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+  ERROR
+}
+
+enum BudgetType {
+  DAILY
+  LIFETIME
+}
+
+model AdSet {
+  id              String      @id @default(cuid())
+  campaignId      String
+  platformAdSetId String?
+  name            String
+  status          CampaignStatus @default(DRAFT)
+  budget          Float?
+  bidAmount       Float?
+  bidStrategy     String?
+  targeting       Json?
+  placements      Json?
+  schedule        Json?
+  optimizationGoal String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  campaign        Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  ads             Ad[]
+}
+
+model Ad {
+  id              String      @id @default(cuid())
+  adSetId         String
+  platformAdId    String?
+  name            String
+  status          CampaignStatus @default(DRAFT)
+  format          AdFormat
+  headline        String?
+  description     String?
+  primaryText     String?
+  callToAction    String?
+  destinationUrl  String?
+  imageUrl        String?
+  videoUrl        String?
+  creativeData    Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  adSet           AdSet       @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  analytics       AdAnalytics[]
+}
+
+enum AdFormat {
+  IMAGE
+  VIDEO
+  CAROUSEL
+  COLLECTION
+  STORIES
+  RESPONSIVE_SEARCH
+  RESPONSIVE_DISPLAY
+  PERFORMANCE_MAX
+  TEXT
+}
+
+model CampaignAnalytics {
+  id              String    @id @default(cuid())
+  campaignId      String
+  date            DateTime
+  impressions     Int       @default(0)
+  clicks          Int       @default(0)
+  spend           Float     @default(0)
+  conversions     Int       @default(0)
+  revenue         Float     @default(0)
+  ctr             Float     @default(0)
+  cpc             Float     @default(0)
+  cpm             Float     @default(0)
+  roas            Float     @default(0)
+  reach           Int       @default(0)
+  frequency       Float     @default(0)
+  createdAt       DateTime  @default(now())
+
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+}
+
+model AdAnalytics {
+  id              String    @id @default(cuid())
+  adId            String
+  date            DateTime
+  impressions     Int       @default(0)
+  clicks          Int       @default(0)
+  spend           Float     @default(0)
+  conversions     Int       @default(0)
+  revenue         Float     @default(0)
+  ctr             Float     @default(0)
+  cpc             Float     @default(0)
+  createdAt       DateTime  @default(now())
+
+  ad              Ad        @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@unique([adId, date])
+}
+
+model AutomationRule {
+  id              String          @id @default(cuid())
+  userId          String
+  campaignId      String?
+  name            String
+  description     String?
+  isActive        Boolean         @default(true)
+  triggerType     TriggerType
+  triggerCondition Json
+  actionType      ActionType
+  actionConfig    Json
+  schedule        String?
+  lastRunAt       DateTime?
+  lastResult      Json?
+  runCount        Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign        Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  logs            AutomationLog[]
+}
+
+enum TriggerType {
+  PERFORMANCE_THRESHOLD
+  SCHEDULE
+  BUDGET_LIMIT
+  TIME_BASED
+  AI_RECOMMENDATION
+  METRIC_CHANGE
+}
+
+enum ActionType {
+  PAUSE_CAMPAIGN
+  RESUME_CAMPAIGN
+  ADJUST_BUDGET
+  ADJUST_BID
+  SEND_NOTIFICATION
+  CHANGE_STATUS
+  DUPLICATE_CAMPAIGN
+  AI_OPTIMIZE
+}
+
+model AutomationLog {
+  id              String    @id @default(cuid())
+  automationId    String
+  action          String
+  result          Json?
+  status          String
+  executedAt      DateTime  @default(now())
+
+  automation      AutomationRule @relation(fields: [automationId], references: [id], onDelete: Cascade)
+}
+
+model Creative {
+  id              String        @id @default(cuid())
+  userId          String
+  name            String
+  type            CreativeType
+  format          String?
+  content         Json
+  imageUrl        String?
+  thumbnailUrl    String?
+  aiGenerated     Boolean       @default(false)
+  prompt          String?
+  tags            String[]
+  width           Int?
+  height          Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum CreativeType {
+  IMAGE
+  VIDEO
+  TEXT
+  CAROUSEL
+  HTML
+}
+
+model LandingPage {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  slug            String    @unique
+  content         Json
+  html            String?
+  css             String?
+  isPublished     Boolean   @default(false)
+  aiGenerated     Boolean   @default(false)
+  prompt          String?
+  visits          Int       @default(0)
+  conversions     Int       @default(0)
+  conversionRate  Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CompetitorReport {
+  id              String    @id @default(cuid())
+  userId          String
+  competitorName  String
+  platform        Platform
+  domain          String?
+  data            Json
+  adCount         Int       @default(0)
+  topCreatives    Json?
+  insights        Json?
+  aiAnalysis      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  userId          String
+  title           String
+  message         String
+  type            NotificationType
+  isRead          Boolean   @default(false)
+  data            Json?
+  createdAt       DateTime  @default(now())
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+  AUTOMATION
+  PERFORMANCE
+}
