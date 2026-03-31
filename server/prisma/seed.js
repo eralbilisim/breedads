@@ -6,6 +6,15 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding database...');
 
+  // Skip if already seeded (check if campaigns exist for demo user)
+  const existing = await prisma.campaign.findFirst({
+    where: { user: { email: 'demo@breedads.com' } },
+  });
+  if (existing) {
+    console.log('Database already seeded, skipping.');
+    return;
+  }
+
   // Create demo user
   const hashedPassword = await bcrypt.hash('password123', 12);
 
