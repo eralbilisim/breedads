@@ -26,7 +26,7 @@ const useAuthStore = create((set, get) => {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401) {
+      if (error.response?.status === 401 && error.config?.url !== '/auth/login' && error.config?.url !== '/auth/register') {
         get().logout();
         window.location.href = '/login';
       }
@@ -50,14 +50,14 @@ const useAuthStore = create((set, get) => {
     login: async (email, password) => {
       set({ loading: true, error: null });
       try {
-        const { data } = await api.post('/auth/login', { email, password });
-        const { token: newToken, user } = data.data || data;
+        const res = await api.post('/auth/login', { email, password });
+        const { token: newToken, user } = res.data;
         localStorage.setItem('breedads_token', newToken);
         localStorage.setItem('breedads_user', JSON.stringify(user));
         set({ user, token: newToken, loading: false, error: null });
         return { success: true };
       } catch (error) {
-        const message = error.response?.data?.message || 'Login failed';
+        const message = error.response?.data?.error || error.response?.data?.message || 'Login failed';
         set({ loading: false, error: message });
         return { success: false, error: message };
       }
@@ -66,14 +66,14 @@ const useAuthStore = create((set, get) => {
     register: async (userData) => {
       set({ loading: true, error: null });
       try {
-        const { data } = await api.post('/auth/register', userData);
-        const { token: newToken, user } = data.data || data;
+        const res = await api.post('/auth/register', userData);
+        const { token: newToken, user } = res.data;
         localStorage.setItem('breedads_token', newToken);
         localStorage.setItem('breedads_user', JSON.stringify(user));
         set({ user, token: newToken, loading: false, error: null });
         return { success: true };
       } catch (error) {
-        const message = error.response?.data?.message || 'Registration failed';
+        const message = error.response?.data?.error || error.response?.data?.message || 'Registration failed';
         set({ loading: false, error: message });
         return { success: false, error: message };
       }
