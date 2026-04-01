@@ -8,21 +8,28 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-const META_APP_ID = process.env.META_APP_ID;
-const META_APP_SECRET = process.env.META_APP_SECRET;
-const META_REDIRECT_URI = process.env.META_REDIRECT_URI || 'http://localhost:3001/api/meta/callback';
+async function getMetaConfig() {
+  try {
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'app_settings' } });
+    return {
+      appId: settings?.metaAppId || process.env.META_APP_ID,
+      appSecret: settings?.metaAppSecret || process.env.META_APP_SECRET,
+      redirectUri: settings?.metaRedirectUri || process.env.META_REDIRECT_URI || 'http://localhost:3001/api/meta/callback',
+    };
+  } catch {
+    return {
+      appId: process.env.META_APP_ID,
+      appSecret: process.env.META_APP_SECRET,
+      redirectUri: process.env.META_REDIRECT_URI || 'http://localhost:3001/api/meta/callback',
+    };
+  }
+}
 
 // GET /api/meta/auth-url
-router.get('/auth-url', (req, res) => {
-  const scopes = [
-    'ads_management',
-    'ads_read',
-    'business_management',
-    'pages_read_engagement',
-  ].join(',');
-
-  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(META_REDIRECT_URI)}&scope=${scopes}&response_type=code&state=${req.user.id}`;
-
+router.get('/auth-url', async (req, res) => {
+  const config = await getMetaConfig();
+  const scopes = ['ads_management', 'ads_read', 'business_management', 'pages_read_engagement'].join(',');
+  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${config.appId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&scope=${scopes}&response_type=code&state=${req.user.id}`;
   res.json({ authUrl });
 });
 
@@ -36,7 +43,8 @@ router.get('/callback', async (req, res, next) => {
     }
 
     // Exchange code for access token
-    const tokenData = await metaAdsService.exchangeCodeForToken(code, META_REDIRECT_URI);
+    const config = await getMetaConfig();
+    const tokenData = await metaAdsService.exchangeCodeForToken(code, config.redirectUri);
 
     // Get long-lived token
     const longLivedToken = await metaAdsService.getLongLivedToken(tokenData.access_token);

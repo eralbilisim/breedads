@@ -15,20 +15,22 @@ import {
   ChevronRight,
   X,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/authStore';
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/campaigns', label: 'Campaigns', icon: Megaphone },
-  { path: '/creatives', label: 'Creative Studio', icon: Palette },
-  { path: '/automation', label: 'Automation', icon: Zap },
-  { path: '/competitors', label: 'Competitors', icon: Search },
-  { path: '/landing-pages', label: 'Landing Pages', icon: Globe },
-  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+  { path: '/campaigns', labelKey: 'nav.campaigns', icon: Megaphone },
+  { path: '/creatives', labelKey: 'nav.creativeStudio', icon: Palette },
+  { path: '/automation', labelKey: 'nav.automation', icon: Zap },
+  { path: '/competitors', labelKey: 'nav.competitors', icon: Search },
+  { path: '/landing-pages', labelKey: 'nav.landingPages', icon: Globe },
+  { path: '/analytics', labelKey: 'nav.analytics', icon: BarChart3 },
+  { path: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -89,7 +91,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
                   ? 'bg-gradient-to-r from-brand-600/20 to-purple-600/20 text-white border border-brand-500/20'
                   : 'text-dark-400 hover:text-white hover:bg-dark-700/50'
               }`}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? t(item.labelKey) : undefined}
             >
               {active && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-brand-400 to-purple-400 rounded-r-full" />
@@ -100,7 +102,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
                   active ? 'text-brand-400' : 'text-dark-400 group-hover:text-white'
                 }`}
               />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span>{t(item.labelKey)}</span>}
             </NavLink>
           );
         })}
@@ -120,7 +122,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
               </span>
             )}
           </div>
-          {!collapsed && <span>Notifications</span>}
+          {!collapsed && <span>{t('common.notifications')}</span>}
         </button>
       </div>
 

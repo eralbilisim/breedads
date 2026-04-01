@@ -12,7 +12,6 @@
     "install:all": "npm install && cd server && npm install && cd ../client && npm install",
     "db:migrate": "cd server && npx prisma migrate deploy",
     "db:generate": "cd server && npx prisma generate",
-    "db:seed": "cd server && npx prisma db seed",
     "postinstall": "cd server && npm install && npx prisma generate && cd ../client && npm install && npm run build"
   },
   "dependencies": {

@@ -11,35 +11,37 @@ import {
   Settings,
   LogOut,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/authStore';
 
-const routeLabels = {
-  '/': 'Dashboard',
-  '/campaigns': 'Campaigns',
-  '/campaigns/new': 'New Campaign',
-  '/creatives': 'Creative Studio',
-  '/automation': 'Automation',
-  '/competitors': 'Competitors',
-  '/landing-pages': 'Landing Pages',
-  '/analytics': 'Analytics',
-  '/settings': 'Settings',
-};
-
-function getBreadcrumbs(pathname) {
-  const parts = pathname.split('/').filter(Boolean);
-  const crumbs = [{ label: 'Home', path: '/' }];
-
-  let currentPath = '';
-  for (const part of parts) {
-    currentPath += `/${part}`;
-    const label = routeLabels[currentPath] || part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, ' ');
-    crumbs.push({ label, path: currentPath });
-  }
-  return crumbs;
-}
-
 export default function Header({ onMenuClick }) {
+  const { t, i18n } = useTranslation();
   const location = useLocation();
+
+  const routeLabels = {
+    '/': t('nav.dashboard'),
+    '/campaigns': t('nav.campaigns'),
+    '/campaigns/new': t('campaigns.newCampaign'),
+    '/creatives': t('nav.creativeStudio'),
+    '/automation': t('nav.automation'),
+    '/competitors': t('nav.competitors'),
+    '/landing-pages': t('nav.landingPages'),
+    '/analytics': t('nav.analytics'),
+    '/settings': t('nav.settings'),
+  };
+
+  function getBreadcrumbs(pathname) {
+    const parts = pathname.split('/').filter(Boolean);
+    const crumbs = [{ label: t('common.home'), path: '/' }];
+
+    let currentPath = '';
+    for (const part of parts) {
+      currentPath += `/${part}`;
+      const label = routeLabels[currentPath] || part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, ' ');
+      crumbs.push({ label, path: currentPath });
+    }
+    return crumbs;
+  }
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [searchQuery, setSearchQuery] = useState('');
@@ -124,10 +126,22 @@ export default function Header({ onMenuClick }) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search campaigns, creatives..."
+              placeholder={t('header.searchPlaceholder')}
               className="bg-dark-800/50 border border-dark-700/50 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all duration-200 w-64 focus:w-80"
             />
           </div>
+
+          {/* Language Toggle */}
+          <button
+            onClick={() => {
+              const newLang = i18n.language === 'tr' ? 'en' : 'tr';
+              i18n.changeLanguage(newLang);
+            }}
+            className="p-2 rounded-xl text-dark-400 hover:text-white hover:bg-dark-700/50 transition-colors text-sm font-medium"
+            title={t('settings.language')}
+          >
+            {i18n.language === 'tr' ? 'TR' : 'EN'}
+          </button>
 
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
@@ -149,20 +163,20 @@ export default function Header({ onMenuClick }) {
             {showNotifications && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-dark-800 border border-dark-700 rounded-xl shadow-2xl shadow-black/40 animate-slideDown overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700">
-                  <h3 className="text-sm font-semibold text-white">Notifications</h3>
+                  <h3 className="text-sm font-semibold text-white">{t('common.notifications')}</h3>
                   {unreadCount > 0 && (
                     <button
                       onClick={markAllRead}
                       className="text-xs text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
                     >
-                      <Check size={12} /> Mark all read
+                      <Check size={12} /> {t('common.markAllRead')}
                     </button>
                   )}
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className="px-4 py-8 text-center text-dark-400 text-sm">
-                      No notifications
+                      {t('common.noNotifications')}
                     </div>
                   ) : (
                     notifications.map((notif) => (
@@ -229,7 +243,7 @@ export default function Header({ onMenuClick }) {
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-dark-300 hover:text-white hover:bg-dark-700/50 transition-colors"
                   >
                     <User size={16} />
-                    Profile
+                    {t('common.profile')}
                   </Link>
                   <Link
                     to="/settings"
@@ -237,14 +251,14 @@ export default function Header({ onMenuClick }) {
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-dark-300 hover:text-white hover:bg-dark-700/50 transition-colors"
                   >
                     <Settings size={16} />
-                    Settings
+                    {t('common.settings')}
                   </Link>
                   <button
                     onClick={handleLogout}
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-danger-400 hover:bg-danger-500/10 transition-colors w-full"
                   >
                     <LogOut size={16} />
-                    Sign Out
+                    {t('common.signOut')}
                   </button>
                 </div>
               </div>

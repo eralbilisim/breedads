@@ -1,120 +1,166 @@
-const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { PrismaClient } = require('@prisma/client');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const prisma = new PrismaClient();
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
-const IMAGE_MODEL = 'dall-e-3';
+let _genAI = null;
+
+async function getGeminiClient() {
+  if (_genAI) return _genAI;
+
+  // Try DB settings first, then env
+  let apiKey = process.env.GEMINI_API_KEY;
+  try {
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'app_settings' } });
+    if (settings?.geminiApiKey) apiKey = settings.geminiApiKey;
+  } catch {
+    // ignore - use env
+  }
+
+  if (!apiKey) {
+    throw new Error('Gemini API key is not configured. Go to Settings > API Keys to add it.');
+  }
+
+  _genAI = new GoogleGenerativeAI(apiKey);
+  return _genAI;
+}
+
+function getModel(modelName) {
+  return modelName || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+}
+
+// Reset client cache when settings change
+function resetClient() {
+  _genAI = null;
+}
 
 /**
- * Generate ad copy (headlines, descriptions, CTAs) using GPT.
+ * Generate ad copy (headlines, descriptions, CTAs) using Gemini.
  */
 async function generateAdCopy(params) {
   const { product, platform, objective, tone, targetAudience, count = 3, customPrompt } = params;
 
-  const systemMessage = `You are an expert digital advertising copywriter with deep experience in ${platform} ads.
-You write high-converting ad copy that drives ${objective.toLowerCase()} results.
-Always return valid JSON arrays.`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
 
-  const userMessage = customPrompt || `Generate ${count} ad copy variations for the following:
+  const systemInstruction = `Sen ${platform} reklamlarında derin deneyime sahip uzman bir dijital reklam metin yazarısın.
+${objective.toLowerCase()} sonuçları elde eden yüksek dönüşümlü reklam metinleri yazarsın.
+Her zaman geçerli JSON dizileri döndür.`;
 
-Product/Service: ${product}
+  const userMessage = customPrompt || `Aşağıdakiler için ${count} adet reklam metni varyasyonu oluştur:
+
+Ürün/Hizmet: ${product}
 Platform: ${platform}
-Objective: ${objective}
-Tone: ${tone}
-Target Audience: ${targetAudience}
+Hedef: ${objective}
+Ton: ${tone}
+Hedef Kitle: ${targetAudience}
 
-For each variation, provide:
-- headline (max 40 characters for Meta, max 30 characters for Google)
-- description (max 125 characters for Meta, max 90 characters for Google)
-- primaryText (max 250 characters, for Meta only)
-- callToAction (e.g., "LEARN_MORE", "SHOP_NOW", "SIGN_UP", "GET_OFFER", "CONTACT_US")
-- hook (the emotional/logical hook being used)
+Her varyasyon için şunları sağla:
+- headline (Meta için max 40, Google için max 30 karakter)
+- description (Meta için max 125, Google için max 90 karakter)
+- primaryText (max 250 karakter, sadece Meta için)
+- callToAction ("LEARN_MORE", "SHOP_NOW", "SIGN_UP", "GET_OFFER", "CONTACT_US" gibi)
+- hook (kullanılan duygusal/mantıksal kanca)
 
-Return as a JSON array of objects with those keys.`;
+Bu anahtarlara sahip nesnelerin JSON dizisi olarak döndür. Yanıtı {"copies": [...]} formatında ver.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.8,
-    max_tokens: 2000,
-    response_format: { type: 'json_object' },
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.8,
+      maxOutputTokens: 2000,
+      responseMimeType: 'application/json',
+    },
   });
 
-  const content = response.choices[0].message.content;
+  const content = result.response.text();
   try {
     const parsed = JSON.parse(content);
     return parsed.copies || parsed.variants || parsed.variations || parsed.results || parsed.data || [parsed];
-  } catch (e) {
+  } catch {
     return [{ headline: content.substring(0, 40), description: content.substring(0, 125), primaryText: content, callToAction: 'LEARN_MORE', hook: 'general' }];
   }
 }
 
 /**
- * Generate an ad image using DALL-E 3.
+ * Generate an ad image description/prompt using Gemini.
+ * Note: Gemini doesn't generate images directly like DALL-E.
+ * This returns an optimized image prompt that can be used with an image generation service.
  */
 async function generateImage(prompt, options = {}) {
-  const { size = '1024x1024', style = 'vivid' } = options;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-  const enhancedPrompt = `Professional advertising image: ${prompt}. High quality, commercial photography style, suitable for digital advertising.`;
+  const enhancedPrompt = `Profesyonel reklam görseli: ${prompt}. Yüksek kalite, ticari fotoğrafçılık stili, dijital reklamcılığa uygun.`;
 
-  const response = await openai.images.generate({
-    model: IMAGE_MODEL,
-    prompt: enhancedPrompt,
-    n: 1,
-    size,
-    style,
-    quality: 'hd',
-  });
+  // Gemini can generate images with Imagen - try it
+  try {
+    const imageModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const result = await imageModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: `Create a professional advertising image: ${enhancedPrompt}. Return a detailed image description and creative brief.` }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1000,
+      },
+    });
 
-  return {
-    url: response.data[0].url,
-    revisedPrompt: response.data[0].revised_prompt,
-  };
+    return {
+      url: null,
+      description: result.response.text(),
+      prompt: enhancedPrompt,
+      note: 'Image description generated. Use with an image generation service for actual image creation.',
+    };
+  } catch {
+    return {
+      url: null,
+      description: enhancedPrompt,
+      prompt: enhancedPrompt,
+      note: 'Image generation requires additional configuration.',
+    };
+  }
 }
 
 /**
  * Analyze campaign performance data and provide insights.
  */
 async function analyzePerformance(performanceSummary) {
-  const systemMessage = `You are an expert digital advertising analyst.
-Analyze campaign performance data and provide actionable insights.
-Always return valid JSON with "insights" (string), "recommendations" (array of strings),
-"alerts" (array of objects with "type" and "message"), and "score" (0-100 overall performance score).`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
 
-  const userMessage = `Analyze the following campaign performance data and provide insights:
+  const systemInstruction = `Sen uzman bir dijital reklam analistsin.
+Kampanya performans verilerini analiz et ve eyleme geçirilebilir öneriler sun.
+Her zaman şu anahtarlara sahip geçerli JSON döndür: "insights" (string), "recommendations" (string dizisi),
+"alerts" (her birinde "type" ve "message" olan nesneler dizisi), ve "score" (0-100 genel performans puanı).`;
+
+  const userMessage = `Aşağıdaki kampanya performans verilerini analiz et ve öneriler sun:
 
 ${JSON.stringify(performanceSummary, null, 2)}
 
-Consider:
-1. Which campaigns are performing best/worst?
-2. Budget allocation efficiency
-3. CTR and CPC benchmarks
-4. ROAS analysis
-5. Recommendations for improvement
-6. Any concerning trends or alerts
+Şunları değerlendir:
+1. Hangi kampanyalar en iyi/en kötü performansı gösteriyor?
+2. Bütçe tahsis verimliliği
+3. TO ve TBM karşılaştırmaları
+4. ROAS analizi
+5. İyileştirme önerileri
+6. Endişe verici trendler veya uyarılar
 
-Respond with actionable, specific insights.`;
+Eyleme geçirilebilir, spesifik öneriler sun.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.5,
-    max_tokens: 3000,
-    response_format: { type: 'json_object' },
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.5,
+      maxOutputTokens: 3000,
+      responseMimeType: 'application/json',
+    },
   });
 
-  const content = response.choices[0].message.content;
+  const content = result.response.text();
   try {
     return JSON.parse(content);
-  } catch (e) {
+  } catch {
     return {
       insights: content,
       recommendations: [],
@@ -130,53 +176,55 @@ Respond with actionable, specific insights.`;
 async function generateLandingPage(prompt, options = {}) {
   const { style = 'modern' } = options;
 
-  const systemMessage = `You are an expert web designer who creates high-converting landing pages.
-Generate complete, responsive HTML and CSS for landing pages.
-The HTML should be clean, semantic, and include conversion-focused elements.
-Add data-conversion attribute to CTA buttons for tracking.
-Return valid JSON with "html" and "css" keys.`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
 
-  const userMessage = `Create a ${style} landing page for the following:
+  const systemInstruction = `Sen yüksek dönüşümlü açılış sayfaları oluşturan uzman bir web tasarımcısın.
+Açılış sayfaları için eksiksiz, duyarlı HTML ve CSS oluştur.
+HTML temiz, semantik olmalı ve dönüşüm odaklı öğeler içermelidir.
+İzleme için CTA düğmelerine data-conversion özniteliği ekle.
+"html" ve "css" anahtarlarına sahip geçerli JSON döndür.`;
+
+  const userMessage = `Aşağıdakiler için ${style} bir açılış sayfası oluştur:
 
 ${prompt}
 
-Requirements:
-- Fully responsive design (mobile-first)
-- Professional and clean layout
-- Hero section with clear headline and CTA
-- Features/benefits section
-- Social proof/testimonials section
-- Final CTA section
-- Use modern CSS (flexbox/grid)
-- Include hover effects and smooth transitions
-- Use a professional color scheme
-- All CTA buttons should have data-conversion="true" attribute
-- Do NOT include <html>, <head>, <body> tags (just the inner content)
-- Use only inline-safe class names (no collisions)
+Gereksinimler:
+- Tam duyarlı tasarım (önce mobil)
+- Profesyonel ve temiz düzen
+- Net başlık ve CTA ile hero bölümü
+- Özellikler/faydalar bölümü
+- Sosyal kanıt/müşteri yorumları bölümü
+- Son CTA bölümü
+- Modern CSS kullan (flexbox/grid)
+- Hover efektleri ve yumuşak geçişler ekle
+- Profesyonel renk şeması kullan
+- Tüm CTA düğmelerinde data-conversion="true" özniteliği olmalı
+- <html>, <head>, <body> etiketleri EKLEME (sadece iç içerik)
+- Sadece satır içi güvenli sınıf adları kullan (çakışma olmasın)
 
-Return JSON with exactly two keys: "html" (the HTML content) and "css" (the CSS styles).`;
+Tam olarak iki anahtara sahip JSON döndür: "html" (HTML içeriği) ve "css" (CSS stilleri).`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.7,
-    max_tokens: 4000,
-    response_format: { type: 'json_object' },
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 4000,
+      responseMimeType: 'application/json',
+    },
   });
 
-  const content = response.choices[0].message.content;
+  const content = result.response.text();
   try {
     const parsed = JSON.parse(content);
     return {
-      html: parsed.html || '<div class="lp-error">Failed to generate HTML</div>',
+      html: parsed.html || '<div class="lp-error">HTML oluşturulamadı</div>',
       css: parsed.css || '',
     };
-  } catch (e) {
+  } catch {
     return {
-      html: `<div class="lp-container"><h1>Landing Page</h1><p>${prompt}</p><button data-conversion="true">Get Started</button></div>`,
+      html: `<div class="lp-container"><h1>Açılış Sayfası</h1><p>${prompt}</p><button data-conversion="true">Başla</button></div>`,
       css: `.lp-container { max-width: 800px; margin: 0 auto; padding: 2rem; text-align: center; font-family: sans-serif; }
 .lp-container button { background: #2563eb; color: white; border: none; padding: 12px 32px; font-size: 18px; border-radius: 8px; cursor: pointer; }
 .lp-container button:hover { background: #1d4ed8; }`,
@@ -188,54 +236,59 @@ Return JSON with exactly two keys: "html" (the HTML content) and "css" (the CSS 
  * Analyze a competitor's ad strategy.
  */
 async function analyzeCompetitor(data) {
-  const systemMessage = `You are an expert competitive intelligence analyst specializing in digital advertising.
-Provide detailed, actionable analysis of competitor ad strategies.`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
 
-  const userMessage = `Analyze this competitor's advertising strategy:
+  const systemInstruction = `Sen dijital reklamcılık konusunda uzmanlaşmış bir rekabet istihbaratı analistsin.
+Rakip reklam stratejileri hakkında detaylı, eyleme geçirilebilir analizler sun.`;
 
-Competitor: ${data.competitorName}
+  const userMessage = `Bu rakibin reklam stratejisini analiz et:
+
+Rakip: ${data.competitorName}
 Platform: ${data.platform}
-Domain: ${data.domain || 'Unknown'}
-Number of active ads: ${data.adCount}
+Domain: ${data.domain || 'Bilinmiyor'}
+Aktif reklam sayısı: ${data.adCount}
 
-Top Creatives:
+En İyi Kreatifler:
 ${JSON.stringify(data.topCreatives || [], null, 2)}
 
-Ad Data Summary:
+Reklam Veri Özeti:
 ${JSON.stringify(data.adsData?.ads?.slice(0, 10) || [], null, 2)}
 
-Provide analysis covering:
-1. Overall ad strategy assessment
-2. Creative patterns and messaging themes
-3. Likely target audience
-4. Ad frequency and budget estimation
-5. Strengths and weaknesses
-6. Opportunities to differentiate
-7. Recommended counter-strategies
-8. Key takeaways
+Şunları kapsayan analiz sun:
+1. Genel reklam stratejisi değerlendirmesi
+2. Kreatif kalıplar ve mesaj temaları
+3. Olası hedef kitle
+4. Reklam sıklığı ve bütçe tahmini
+5. Güçlü ve zayıf yönler
+6. Farklılaşma fırsatları
+7. Önerilen karşı stratejiler
+8. Önemli çıkarımlar
 
-Be specific and actionable.`;
+Spesifik ve eyleme geçirilebilir ol.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.6,
-    max_tokens: 3000,
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.6,
+      maxOutputTokens: 3000,
+    },
   });
 
-  return response.choices[0].message.content;
+  return result.response.text();
 }
 
 /**
  * Generate automation rule suggestions based on campaign data.
  */
 async function generateAutomationSuggestions(campaigns) {
-  const systemMessage = `You are an expert in advertising automation and optimization.
-Suggest automation rules to improve campaign performance.
-Return valid JSON with an array of rule suggestions.`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
+
+  const systemInstruction = `Sen reklam otomasyonu ve optimizasyon uzmanısın.
+Kampanya performansını iyileştirmek için otomasyon kuralları öner.
+Kural önerileri dizisi içeren geçerli JSON döndür.`;
 
   const summaries = campaigns.map(c => ({
     name: c.name,
@@ -245,38 +298,37 @@ Return valid JSON with an array of rule suggestions.`;
     objective: c.objective,
   }));
 
-  const userMessage = `Based on these active campaigns, suggest automation rules:
+  const userMessage = `Bu aktif kampanyalara dayalı otomasyon kuralları öner:
 
 ${JSON.stringify(summaries, null, 2)}
 
-For each suggestion, provide:
-- name: rule name
-- description: what it does
-- triggerType: one of PERFORMANCE_THRESHOLD, SCHEDULE, BUDGET_LIMIT, TIME_BASED, AI_RECOMMENDATION, METRIC_CHANGE
-- triggerCondition: example condition object
-- actionType: one of PAUSE_CAMPAIGN, RESUME_CAMPAIGN, ADJUST_BUDGET, ADJUST_BID, SEND_NOTIFICATION, CHANGE_STATUS, DUPLICATE_CAMPAIGN, AI_OPTIMIZE
-- actionConfig: example action config object
+Her öneri için şunları sağla:
+- name: kural adı
+- description: ne yaptığı
+- triggerType: PERFORMANCE_THRESHOLD, SCHEDULE, BUDGET_LIMIT, TIME_BASED, AI_RECOMMENDATION, METRIC_CHANGE
+- triggerCondition: örnek koşul nesnesi
+- actionType: PAUSE_CAMPAIGN, RESUME_CAMPAIGN, ADJUST_BUDGET, ADJUST_BID, SEND_NOTIFICATION, CHANGE_STATUS, DUPLICATE_CAMPAIGN, AI_OPTIMIZE
+- actionConfig: örnek eylem yapılandırma nesnesi
 - priority: high/medium/low
-- reason: why this rule is recommended
+- reason: bu kuralın neden önerildiği
 
-Return JSON with a "suggestions" array.`;
+JSON'u {"suggestions": [...]} formatında döndür.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.6,
-    max_tokens: 3000,
-    response_format: { type: 'json_object' },
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.6,
+      maxOutputTokens: 3000,
+      responseMimeType: 'application/json',
+    },
   });
 
-  const content = response.choices[0].message.content;
+  const content = result.response.text();
   try {
     const parsed = JSON.parse(content);
     return parsed.suggestions || parsed.rules || [];
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -285,52 +337,54 @@ Return JSON with a "suggestions" array.`;
  * Analyze a campaign and suggest optimizations.
  */
 async function optimizeCampaign(campaign, analytics) {
-  const systemMessage = `You are an expert campaign optimization specialist.
-Analyze campaign data and suggest specific, actionable optimizations.
-Return valid JSON with "optimizations" array and "overallAssessment" string.`;
+  const genAI = await getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: getModel() });
 
-  const userMessage = `Optimize this campaign:
+  const systemInstruction = `Sen uzman bir kampanya optimizasyon uzmanısın.
+Kampanya verilerini analiz et ve spesifik, eyleme geçirilebilir optimizasyonlar öner.
+"optimizations" dizisi ve "overallAssessment" string içeren geçerli JSON döndür.`;
 
-Campaign: ${campaign.name}
+  const userMessage = `Bu kampanyayı optimize et:
+
+Kampanya: ${campaign.name}
 Platform: ${campaign.platform}
-Objective: ${campaign.objective}
-Budget: $${campaign.budget} (${campaign.budgetType})
-Status: ${campaign.status}
-Targeting: ${JSON.stringify(campaign.targeting || {})}
+Hedef: ${campaign.objective}
+Bütçe: $${campaign.budget} (${campaign.budgetType})
+Durum: ${campaign.status}
+Hedefleme: ${JSON.stringify(campaign.targeting || {})}
 
-Recent Analytics (last 7 days):
+Son Analitik (son 7 gün):
 ${JSON.stringify(analytics || [], null, 2)}
 
-Provide specific optimizations for:
-1. Budget allocation
-2. Targeting refinement
-3. Bid strategy
-4. Creative recommendations
-5. Scheduling adjustments
-6. A/B test suggestions
+Şunlar için spesifik optimizasyonlar sun:
+1. Bütçe tahsisi
+2. Hedefleme iyileştirmesi
+3. Teklif stratejisi
+4. Kreatif önerileri
+5. Zamanlama ayarlamaları
+6. A/B test önerileri
 
-Each optimization should have:
-- category: the area of optimization
-- action: specific action to take
-- expectedImpact: estimated improvement
+Her optimizasyonda şunlar olsun:
+- category: optimizasyon alanı
+- action: yapılacak spesifik eylem
+- expectedImpact: tahmini iyileştirme
 - priority: high/medium/low
-- implementation: steps to implement`;
+- implementation: uygulama adımları`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage },
-    ],
-    temperature: 0.5,
-    max_tokens: 3000,
-    response_format: { type: 'json_object' },
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    generationConfig: {
+      temperature: 0.5,
+      maxOutputTokens: 3000,
+      responseMimeType: 'application/json',
+    },
   });
 
-  const content = response.choices[0].message.content;
+  const content = result.response.text();
   try {
     return JSON.parse(content);
-  } catch (e) {
+  } catch {
     return {
       overallAssessment: content,
       optimizations: [],
@@ -346,4 +400,5 @@ module.exports = {
   analyzeCompetitor,
   generateAutomationSuggestions,
   optimizeCampaign,
+  resetClient,
 };

@@ -20,6 +20,10 @@ const competitorRoutes = require('./routes/competitors');
 const landingPageRoutes = require('./routes/landingPages');
 const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
+const settingsRoutes = require('./routes/settings');
+const metaAdSetsRoutes = require('./routes/metaAdSets');
+const metaAdsManageRoutes = require('./routes/metaAdsManage');
+const metaAudiencesRoutes = require('./routes/metaAudiences');
 
 const { startAutomationCron } = require('./services/automation');
 
@@ -85,6 +89,10 @@ app.use('/api/competitors', competitorRoutes);
 app.use('/api/landing-pages', landingPageRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/meta/adsets-manage', metaAdSetsRoutes);
+app.use('/api/meta/ads-manage', metaAdsManageRoutes);
+app.use('/api/meta/audiences', metaAudiencesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

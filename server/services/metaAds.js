@@ -1,8 +1,32 @@
 const axios = require('axios');
+const { PrismaClient } = require('@prisma/client');
 
 const META_API_BASE = 'https://graph.facebook.com/v21.0';
-const META_APP_ID = process.env.META_APP_ID;
-const META_APP_SECRET = process.env.META_APP_SECRET;
+const prisma = new PrismaClient();
+
+let _settingsCache = null;
+let _settingsCacheTime = 0;
+
+async function getAppSettings() {
+  const now = Date.now();
+  if (_settingsCache && now - _settingsCacheTime < 300000) return _settingsCache;
+  try {
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'app_settings' } });
+    _settingsCache = settings;
+    _settingsCacheTime = now;
+    return settings;
+  } catch { return null; }
+}
+
+async function getMetaAppId() {
+  const s = await getAppSettings();
+  return s?.metaAppId || process.env.META_APP_ID;
+}
+
+async function getMetaAppSecret() {
+  const s = await getAppSettings();
+  return s?.metaAppSecret || process.env.META_APP_SECRET;
+}
 
 /**
  * Create an axios instance for Meta API calls.
@@ -19,13 +43,10 @@ function metaApi(accessToken) {
  * Exchange an OAuth authorization code for an access token.
  */
 async function exchangeCodeForToken(code, redirectUri) {
+  const appId = await getMetaAppId();
+  const appSecret = await getMetaAppSecret();
   const response = await axios.get(`${META_API_BASE}/oauth/access_token`, {
-    params: {
-      client_id: META_APP_ID,
-      client_secret: META_APP_SECRET,
-      redirect_uri: redirectUri,
-      code,
-    },
+    params: { client_id: appId, client_secret: appSecret, redirect_uri: redirectUri, code },
   });
   return response.data;
 }
@@ -34,13 +55,10 @@ async function exchangeCodeForToken(code, redirectUri) {
  * Exchange a short-lived token for a long-lived token.
  */
 async function getLongLivedToken(shortLivedToken) {
+  const appId = await getMetaAppId();
+  const appSecret = await getMetaAppSecret();
   const response = await axios.get(`${META_API_BASE}/oauth/access_token`, {
-    params: {
-      grant_type: 'fb_exchange_token',
-      client_id: META_APP_ID,
-      client_secret: META_APP_SECRET,
-      fb_exchange_token: shortLivedToken,
-    },
+    params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortLivedToken },
   });
   return response.data;
 }
@@ -349,6 +367,62 @@ async function getAdInsights(adAccount, platformAdId, options = {}) {
   return response.data.data || [];
 }
 
+async function getAdSets(adAccount, platformCampaignId) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.get(`/${platformCampaignId}/adsets`, {
+    params: {
+      fields: 'id,name,status,daily_budget,lifetime_budget,bid_amount,bid_strategy,targeting,optimization_goal,billing_event,start_time,end_time',
+      limit: 100,
+    },
+  });
+  return response.data.data || [];
+}
+
+async function updateAdSet(adAccount, platformAdSetId, updates) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.post(`/${platformAdSetId}`, null, { params: updates });
+  return response.data;
+}
+
+async function deleteAdSet(adAccount, platformAdSetId) {
+  return updateAdSet(adAccount, platformAdSetId, { status: 'DELETED' });
+}
+
+async function getAds(adAccount, platformAdSetId) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.get(`/${platformAdSetId}/ads`, {
+    params: {
+      fields: 'id,name,status,creative{id,name,title,body,image_url,video_id,object_story_spec},created_time',
+      limit: 100,
+    },
+  });
+  return response.data.data || [];
+}
+
+async function updateAd(adAccount, platformAdId, updates) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.post(`/${platformAdId}`, null, { params: updates });
+  return response.data;
+}
+
+async function deleteAd(adAccount, platformAdId) {
+  return updateAd(adAccount, platformAdId, { status: 'DELETED' });
+}
+
+async function getAccountInsights(adAccount, options = {}) {
+  const api = metaApi(adAccount.accessToken);
+  const params = {
+    fields: 'date_start,date_stop,impressions,clicks,spend,conversions,ctr,cpc,cpm,reach,frequency,actions,action_values',
+    time_increment: 1,
+    limit: 100,
+  };
+  if (options.startDate && options.endDate) {
+    params.time_range = JSON.stringify({ since: options.startDate, until: options.endDate });
+  }
+  const response = await api.get(`/act_${adAccount.accountId}/insights`, { params });
+  return response.data.data || [];
+}
+
 module.exports = {
   exchangeCodeForToken,
   getLongLivedToken,
@@ -364,4 +438,11 @@ module.exports = {
   getCampaignInsights,
   getAdSetInsights,
   getAdInsights,
+  getAdSets,
+  updateAdSet,
+  deleteAdSet,
+  getAds,
+  updateAd,
+  deleteAd,
+  getAccountInsights,
 };

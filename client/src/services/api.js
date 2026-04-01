@@ -63,18 +63,37 @@ export const adsAPI = {
 
 // Meta (Facebook/Instagram)
 export const metaAPI = {
-  authUrl: () => api.get('/integrations/meta/auth-url'),
-  accounts: () => api.get('/integrations/meta/accounts'),
-  sync: (accountId) => api.post(`/integrations/meta/sync/${accountId}`),
-  insights: (accountId, params) => api.get(`/integrations/meta/insights/${accountId}`, { params }),
+  authUrl: () => api.get('/meta/auth-url'),
+  accounts: () => api.get('/meta/accounts'),
+  sync: (accountId) => api.post('/meta/sync', { accountId }),
+  insights: (campaignId, params) => api.get(`/meta/insights/${campaignId}`, { params }),
+  publishCampaign: (id) => api.post(`/meta/campaigns/${id}/publish`),
+  updateCampaign: (id) => api.post(`/meta/campaigns/${id}/update`),
+  // Ad Sets on Meta
+  adSets: (campaignId) => api.get(`/meta/adsets-manage/${campaignId}`),
+  createAdSet: (adSetId) => api.post('/meta/adsets-manage', { adSetId }),
+  updateAdSet: (id, data) => api.put(`/meta/adsets-manage/${id}`, data),
+  deleteAdSet: (id) => api.delete(`/meta/adsets-manage/${id}`),
+  // Ads on Meta
+  createAd: (adId) => api.post('/meta/ads-manage', { adId }),
+  updateAdStatus: (id, status) => api.put(`/meta/ads-manage/${id}/status`, { status }),
+  deleteAd: (id) => api.delete(`/meta/ads-manage/${id}`),
+  adInsights: (id, params) => api.get(`/meta/ads-manage/${id}/insights`, { params }),
+  // Audiences
+  audiences: (accountId) => api.get(`/meta/audiences/${accountId}`),
+  createAudience: (accountId, data) => api.post(`/meta/audiences/${accountId}`, data),
+  createLookalike: (accountId, data) => api.post(`/meta/audiences/${accountId}/lookalike`, data),
+  deleteAudience: (accountId, audienceId) => api.delete(`/meta/audiences/${accountId}/${audienceId}`),
+  targetingSearch: (accountId, q, type) => api.get(`/meta/audiences/${accountId}/targeting-search`, { params: { q, type } }),
+  reachEstimate: (accountId, targeting_spec) => api.get(`/meta/audiences/${accountId}/reach-estimate`, { params: { targeting_spec } }),
 };
 
 // Google Ads
 export const googleAPI = {
-  authUrl: () => api.get('/integrations/google/auth-url'),
-  accounts: () => api.get('/integrations/google/accounts'),
-  sync: (accountId) => api.post(`/integrations/google/sync/${accountId}`),
-  insights: (accountId, params) => api.get(`/integrations/google/insights/${accountId}`, { params }),
+  authUrl: () => api.get('/google/auth-url'),
+  accounts: () => api.get('/google/accounts'),
+  sync: (accountId) => api.post('/google/sync', { accountId }),
+  insights: (campaignId, params) => api.get(`/google/insights/${campaignId}`, { params }),
 };
 
 // Automation
@@ -133,6 +152,13 @@ export const notificationsAPI = {
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
   delete: (id) => api.delete(`/notifications/${id}`),
+};
+
+// App Settings (admin)
+export const settingsAPI = {
+  get: () => api.get('/settings'),
+  update: (data) => api.put('/settings', data),
+  test: (provider) => api.post('/settings/test', { provider }),
 };
 
 export default api;

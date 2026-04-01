@@ -346,3 +346,17 @@ enum NotificationType {
   AUTOMATION
   PERFORMANCE
 }
+
+model AppSettings {
+  id                   String    @id @default("app_settings")
+  metaAppId            String?
+  metaAppSecret        String?
+  metaRedirectUri      String?
+  googleClientId       String?
+  googleClientSecret   String?
+  googleDeveloperToken String?
+  googleRedirectUri    String?
+  geminiApiKey         String?
+  updatedAt            DateTime  @updatedAt
+  updatedBy            String?
+}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Toaster } from 'react-hot-toast';
 import useAuthStore from './store/authStore';
 import Layout from './components/Layout/Layout';
@@ -36,6 +37,7 @@ function PublicRoute({ children }) {
 
 // Login Page
 function LoginPage() {
+  const { t } = useTranslation();
   const login = useAuthStore((s) => s.login);
   const loading = useAuthStore((s) => s.loading);
   const error = useAuthStore((s) => s.error);
@@ -61,7 +63,7 @@ function LoginPage() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold gradient-text mb-2">BreedAds</h1>
-          <p className="text-dark-400">Sign in to your account</p>
+          <p className="text-dark-400">{t('auth.signInTitle')}</p>
         </div>
         <div className="glass rounded-2xl p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -71,24 +73,24 @@ function LoginPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('common.email')}</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input-dark w-full"
-                placeholder="you@company.com"
+                placeholder={t('auth.emailPlaceholder')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Password</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('common.password')}</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-dark w-full"
-                placeholder="Enter your password"
+                placeholder={t('auth.passwordPlaceholder')}
                 required
               />
             </div>
@@ -103,14 +105,14 @@ function LoginPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
               ) : (
-                'Sign In'
+                t('common.signIn')
               )}
             </button>
           </form>
           <p className="text-center text-dark-400 text-sm mt-6">
-            {"Don't have an account? "}
+            {t('auth.noAccount')}{' '}
             <a href="/register" className="text-brand-400 hover:text-brand-300 transition-colors">
-              Sign up
+              {t('common.signUp')}
             </a>
           </p>
         </div>
@@ -121,6 +123,7 @@ function LoginPage() {
 
 // Register Page
 function RegisterPage() {
+  const { t } = useTranslation();
   const register = useAuthStore((s) => s.register);
   const loading = useAuthStore((s) => s.loading);
   const error = useAuthStore((s) => s.error);
@@ -154,7 +157,7 @@ function RegisterPage() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold gradient-text mb-2">BreedAds</h1>
-          <p className="text-dark-400">Create your account</p>
+          <p className="text-dark-400">{t('auth.signUpTitle')}</p>
         </div>
         <div className="glass rounded-2xl p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -164,49 +167,49 @@ function RegisterPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Full Name</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('auth.fullName')}</label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
                 className="input-dark w-full"
-                placeholder="John Doe"
+                placeholder={t('auth.fullNamePlaceholder')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('common.email')}</label>
               <input
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 className="input-dark w-full"
-                placeholder="you@company.com"
+                placeholder={t('auth.emailPlaceholder')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Company</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('auth.company')}</label>
               <input
                 type="text"
                 name="company"
                 value={formData.company}
                 onChange={handleChange}
                 className="input-dark w-full"
-                placeholder="Your company name"
+                placeholder={t('auth.companyPlaceholder')}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">Password</label>
+              <label className="block text-sm font-medium text-dark-300 mb-1.5">{t('common.password')}</label>
               <input
                 type="password"
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
                 className="input-dark w-full"
-                placeholder="Min 8 characters"
+                placeholder={t('auth.minChars', { count: 8 })}
                 required
                 minLength={8}
               />
@@ -222,14 +225,14 @@ function RegisterPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
               ) : (
-                'Create Account'
+                t('common.signUp')
               )}
             </button>
           </form>
           <p className="text-center text-dark-400 text-sm mt-6">
-            Already have an account?{' '}
+            {t('auth.hasAccount')}{' '}
             <a href="/login" className="text-brand-400 hover:text-brand-300 transition-colors">
-              Sign in
+              {t('common.signIn')}
             </a>
           </p>
         </div>
