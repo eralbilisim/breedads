@@ -11,7 +11,7 @@ cmds = [
 cmds = ["cd client && npm run build"]
 
 [start]
-cmd = "cd server && npx prisma db push --skip-generate && node prisma/seed.js && node index.js"
+cmd = "cd server && npx prisma db push --skip-generate && node index.js"
 
 [variables]
 PRISMA_ENGINES_MIRROR = "https://binaries.prisma.sh"
