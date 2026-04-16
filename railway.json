@@ -6,7 +6,7 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "startCommand": "cd server && npx prisma db push --skip-generate && node prisma/seed.js && node index.js",
+    "startCommand": "cd server && npx prisma db push --skip-generate && node index.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",

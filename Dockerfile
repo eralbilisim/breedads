@@ -51,4 +51,4 @@ ENV PORT=3001
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "cd server && npx prisma db push --skip-generate && node prisma/seed.js && node index.js"]
+CMD ["sh", "-c", "cd server && npx prisma db push --skip-generate && node index.js"]
