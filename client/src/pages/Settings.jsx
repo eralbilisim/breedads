@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -49,7 +50,6 @@ import Tabs from '../components/ui/Tabs';
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'accounts', label: 'Ad Accounts', icon: Link2 },
-  { id: 'api-keys', label: 'API Keys', icon: Key },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'billing', label: 'Billing', icon: CreditCard },
 ];
@@ -1250,7 +1250,24 @@ function BillingTab() {
 // ── Main Settings Component ─────────────────────────────────────────────────
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('profile');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = TABS.find((t) => t.id === searchParams.get('tab'))?.id || 'profile';
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && TABS.find((t) => t.id === tab) && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handleTabChange = (next) => {
+    setActiveTab(next);
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', next);
+    setSearchParams(params, { replace: true });
+  };
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -1258,8 +1275,6 @@ export default function Settings() {
         return <ProfileTab />;
       case 'accounts':
         return <AdAccountsTab />;
-      case 'api-keys':
-        return <APIKeysTab />;
       case 'notifications':
         return <NotificationsTab />;
       case 'billing':
@@ -1278,7 +1293,7 @@ export default function Settings() {
       </div>
 
       {/* Tabs */}
-      <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
+      <Tabs tabs={TABS} activeTab={activeTab} onChange={handleTabChange} />
 
       {/* Tab Content */}
       <motion.div

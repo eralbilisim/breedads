@@ -45,20 +45,20 @@ export const campaignsAPI = {
 
 // Ad Sets
 export const adSetsAPI = {
-  list: (campaignId, params) => api.get(`/campaigns/${campaignId}/adsets`, { params }),
-  get: (campaignId, id) => api.get(`/campaigns/${campaignId}/adsets/${id}`),
-  create: (campaignId, data) => api.post(`/campaigns/${campaignId}/adsets`, data),
-  update: (campaignId, id, data) => api.put(`/campaigns/${campaignId}/adsets/${id}`, data),
-  delete: (campaignId, id) => api.delete(`/campaigns/${campaignId}/adsets/${id}`),
+  list: (campaignId) => api.get('/adsets', { params: { campaignId } }),
+  get: (id) => api.get(`/adsets/${id}`),
+  create: (data) => api.post('/adsets', data),
+  update: (id, data) => api.put(`/adsets/${id}`, data),
+  delete: (id) => api.delete(`/adsets/${id}`),
 };
 
 // Ads
 export const adsAPI = {
-  list: (adSetId, params) => api.get(`/adsets/${adSetId}/ads`, { params }),
-  get: (adSetId, id) => api.get(`/adsets/${adSetId}/ads/${id}`),
-  create: (adSetId, data) => api.post(`/adsets/${adSetId}/ads`, data),
-  update: (adSetId, id, data) => api.put(`/adsets/${adSetId}/ads/${id}`, data),
-  delete: (adSetId, id) => api.delete(`/adsets/${adSetId}/ads/${id}`),
+  list: (adSetId) => api.get('/ads', { params: { adSetId } }),
+  get: (id) => api.get(`/ads/${id}`),
+  create: (data) => api.post('/ads', data),
+  update: (id, data) => api.put(`/ads/${id}`, data),
+  delete: (id) => api.delete(`/ads/${id}`),
 };
 
 // Meta (Facebook/Instagram)

@@ -577,10 +577,10 @@ function AdSetsTab({ campaign, onRefresh }) {
         budget: parseFloat(form.budget) || 0,
       };
       if (editingAdSet) {
-        await adSetsAPI.update(campaignId, editingAdSet._id || editingAdSet.id, payload);
+        await adSetsAPI.update(editingAdSet._id || editingAdSet.id, payload);
         toast.success('Ad set updated');
       } else {
-        await adSetsAPI.create(campaignId, payload);
+        await adSetsAPI.create({ campaignId, ...payload });
         toast.success('Ad set created');
       }
       setModalOpen(false);
@@ -597,7 +597,7 @@ function AdSetsTab({ campaign, onRefresh }) {
     if (!deleteModal.adSet) return;
     try {
       setDeleteLoading(true);
-      await adSetsAPI.delete(campaignId, deleteModal.adSet._id || deleteModal.adSet.id);
+      await adSetsAPI.delete(deleteModal.adSet._id || deleteModal.adSet.id);
       toast.success('Ad set deleted');
       setDeleteModal({ open: false, adSet: null });
       fetchAdSets();
@@ -936,7 +936,7 @@ function AdsTab({ campaign, onRefresh }) {
     }
     try {
       setSaving(true);
-      await adsAPI.create(adForm.adSetId, adForm);
+      await adsAPI.create(adForm);
       toast.success('Ad created');
       setModalOpen(false);
       setModalStep(1);
@@ -954,8 +954,7 @@ function AdsTab({ campaign, onRefresh }) {
     if (!deleteModal.ad) return;
     try {
       setDeleteLoading(true);
-      const adSetId = deleteModal.adSetId || deleteModal.ad.adSetId;
-      await adsAPI.delete(adSetId, deleteModal.ad._id || deleteModal.ad.id);
+      await adsAPI.delete(deleteModal.ad._id || deleteModal.ad.id);
       toast.success('Ad deleted');
       setDeleteModal({ open: false, ad: null, adSetId: null });
       fetchAds();

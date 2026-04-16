@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -36,7 +36,7 @@ import {
   Loader2,
   ChevronDown,
 } from 'lucide-react';
-import { campaignsAPI } from '../services/api';
+import { campaignsAPI, adSetsAPI, adsAPI, metaAPI, googleAPI } from '../services/api';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -235,7 +235,25 @@ function StepIndicator({ currentStep, onStepClick }) {
 
 // ── Step 1: Platform & Objective ────────────────────────────────────────────
 
-function Step1({ form, setForm }) {
+function Step1({ form, setForm, accounts, accountsLoading }) {
+  const navigate = useNavigate();
+  const availableAccounts = accounts.filter((a) =>
+    a.platform?.toUpperCase() === form.platform?.toUpperCase()
+  );
+
+  // Auto-select first account when platform changes
+  useEffect(() => {
+    if (availableAccounts.length > 0) {
+      const currentStillValid = availableAccounts.some((a) => a.id === form.adAccountId);
+      if (!currentStillValid) {
+        setForm((f) => ({ ...f, adAccountId: availableAccounts[0].id }));
+      }
+    } else if (form.adAccountId) {
+      setForm((f) => ({ ...f, adAccountId: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.platform, accounts]);
+
   return (
     <motion.div key="step1" variants={stepVariants} initial="hidden" animate="visible" exit="exit" className="space-y-8">
       {/* Platform Selection */}
@@ -311,6 +329,69 @@ function Step1({ form, setForm }) {
             )}
           </button>
         </div>
+      </div>
+
+      {/* Ad Account Selection */}
+      <div>
+        <h2 className="text-lg font-semibold text-white mb-2">Select Ad Account</h2>
+        <p className="text-sm text-dark-400 mb-4">
+          Choose which {form.platform === 'meta' ? 'Meta' : 'Google'} account to run this campaign on
+        </p>
+        {accountsLoading ? (
+          <div className="animate-pulse bg-dark-800/50 border border-dark-700/50 rounded-xl h-14" />
+        ) : availableAccounts.length === 0 ? (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+              <Link size={16} className="text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-white mb-1">
+                No {form.platform === 'meta' ? 'Meta' : 'Google'} account connected
+              </p>
+              <p className="text-xs text-dark-300 mb-3">
+                Connect an ad account first to create campaigns.
+              </p>
+              <button
+                onClick={() => navigate('/settings?tab=accounts')}
+                className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1"
+              >
+                Go to Settings <ArrowRight size={12} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            {availableAccounts.map((account) => {
+              const selected = form.adAccountId === account.id;
+              return (
+                <button
+                  key={account.id}
+                  onClick={() => setForm({ ...form, adAccountId: account.id })}
+                  className={`flex items-center gap-3 p-4 rounded-xl border transition-all duration-200 text-left ${
+                    selected
+                      ? 'bg-brand-500/10 border-brand-500/40'
+                      : 'bg-dark-800/50 border-dark-700/50 hover:border-dark-600/50'
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">
+                      {account.accountName || account.accountId || 'Ad Account'}
+                    </p>
+                    <p className="text-xs text-dark-400 truncate">
+                      ID: {account.accountId || account.id}
+                      {account.currency ? ` · ${account.currency}` : ''}
+                    </p>
+                  </div>
+                  {selected && (
+                    <div className="w-6 h-6 rounded-full bg-brand-500 flex items-center justify-center flex-shrink-0">
+                      <Check size={14} className="text-white" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Objective Selection */}
@@ -1042,14 +1123,49 @@ function Step5({ form }) {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
+// Map lowercase UI values to backend uppercase enums
+const OBJECTIVE_MAP = {
+  awareness: 'AWARENESS',
+  traffic: 'TRAFFIC',
+  engagement: 'ENGAGEMENT',
+  leads: 'LEADS',
+  sales: 'SALES',
+  conversions: 'CONVERSIONS',
+  video_views: 'VIDEO_VIEWS',
+  messages: 'MESSAGES',
+};
+
+const FORMAT_MAP = {
+  image: 'IMAGE',
+  video: 'VIDEO',
+  carousel: 'CAROUSEL',
+  stories: 'STORIES',
+};
+
+const CTA_MAP = {
+  learn_more: 'LEARN_MORE',
+  shop_now: 'SHOP_NOW',
+  sign_up: 'SIGN_UP',
+  book_now: 'BOOK_NOW',
+  contact_us: 'CONTACT_US',
+  download: 'DOWNLOAD',
+  get_offer: 'GET_OFFER',
+  get_quote: 'GET_QUOTE',
+  subscribe: 'SUBSCRIBE',
+  apply_now: 'APPLY_NOW',
+};
+
 export default function CampaignCreate() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [accounts, setAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
 
   const [form, setForm] = useState({
     platform: 'meta',
+    adAccountId: '',
     objective: '',
     name: '',
     budgetType: 'daily',
@@ -1084,11 +1200,39 @@ export default function CampaignCreate() {
     },
   });
 
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        setAccountsLoading(true);
+        const [metaRes, googleRes] = await Promise.allSettled([
+          metaAPI.accounts(),
+          googleAPI.accounts(),
+        ]);
+        const meta = metaRes.status === 'fulfilled'
+          ? (Array.isArray(metaRes.value) ? metaRes.value : metaRes.value?.accounts || []).map((a) => ({ ...a, platform: 'META' }))
+          : [];
+        const google = googleRes.status === 'fulfilled'
+          ? (Array.isArray(googleRes.value) ? googleRes.value : googleRes.value?.accounts || []).map((a) => ({ ...a, platform: 'GOOGLE' }))
+          : [];
+        setAccounts([...meta, ...google]);
+      } catch (err) {
+        console.error('Failed to load ad accounts:', err);
+      } finally {
+        setAccountsLoading(false);
+      }
+    };
+    loadAccounts();
+  }, []);
+
   const validateStep = (step) => {
     switch (step) {
       case 1:
         if (!form.platform) {
           toast.error('Please select a platform');
+          return false;
+        }
+        if (!form.adAccountId) {
+          toast.error('Please select an ad account');
           return false;
         }
         if (!form.objective) {
@@ -1134,38 +1278,86 @@ export default function CampaignCreate() {
     }
   };
 
-  const buildPayload = () => {
-    const payload = {
-      platform: form.platform,
-      objective: form.objective,
-      name: form.name,
-      budgetType: form.budgetType,
+  const buildCampaignPayload = () => ({
+    adAccountId: form.adAccountId,
+    name: form.name,
+    objective: OBJECTIVE_MAP[form.objective] || form.objective?.toUpperCase(),
+    budget: parseFloat(form.budget) || 0,
+    budgetType: form.budgetType === 'lifetime' ? 'LIFETIME' : 'DAILY',
+    startDate: form.startDate || undefined,
+    endDate: form.endDate || undefined,
+    targeting: { ...form.targeting },
+    settings: { currency: form.currency },
+  });
+
+  const buildAdSetPayload = (campaignId) => {
+    const isGoogle = form.platform === 'google';
+    return {
+      campaignId,
+      name: `${form.name} - Ad Set`,
       budget: parseFloat(form.budget) || 0,
-      currency: form.currency,
-      startDate: form.startDate || undefined,
-      endDate: form.endDate || undefined,
-      targeting: { ...form.targeting },
-      ad: {
-        format: form.ad.format,
-        cta: form.ad.cta,
-        destinationUrl: form.ad.destinationUrl,
-        mediaUrl: form.ad.mediaUrl,
-      },
+      bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: isGoogle
+        ? {
+            keywords: form.targeting.keywords || [],
+            matchType: form.targeting.matchType || 'broad',
+            locations: form.targeting.locations || [],
+            languages: form.targeting.languages || [],
+            device: form.targeting.device || 'all',
+            negativeKeywords: form.targeting.negativeKeywords || [],
+          }
+        : {
+            ageMin: form.targeting.ageMin || 18,
+            ageMax: form.targeting.ageMax || 65,
+            gender: form.targeting.gender || 'all',
+            locations: form.targeting.locations || [],
+            interests: form.targeting.interests || [],
+            behaviors: form.targeting.behaviors || [],
+            customAudiences: form.targeting.customAudiences || [],
+          },
+      placements: isGoogle
+        ? { device: form.targeting.device || 'all' }
+        : { feed: true, stories: form.ad.format === 'stories' },
+      optimizationGoal: OBJECTIVE_MAP[form.objective] || 'LINK_CLICKS',
     };
-
-    if (form.platform === 'google') {
-      payload.ad.headlines = (form.ad.headlines || []).filter(Boolean);
-      payload.ad.descriptions = (form.ad.descriptions || []).filter(Boolean);
-    } else {
-      payload.ad.headline = form.ad.headline;
-      payload.ad.description = form.ad.description;
-      payload.ad.primaryText = form.ad.primaryText;
-    }
-
-    return payload;
   };
 
+  const buildAdPayload = (adSetId) => {
+    const isGoogle = form.platform === 'google';
+    const mediaIsVideo = /\.(mp4|mov|webm)(\?|$)/i.test(form.ad.mediaUrl || '');
+    return {
+      adSetId,
+      name: `${form.name} - Ad`,
+      format: FORMAT_MAP[form.ad.format] || 'IMAGE',
+      headline: isGoogle
+        ? ((form.ad.headlines || []).filter(Boolean).join(' | ') || '')
+        : (form.ad.headline || ''),
+      description: isGoogle
+        ? ((form.ad.descriptions || []).filter(Boolean).join(' | ') || '')
+        : (form.ad.description || ''),
+      primaryText: !isGoogle ? (form.ad.primaryText || '') : '',
+      callToAction: CTA_MAP[form.ad.cta] || 'LEARN_MORE',
+      destinationUrl: form.ad.destinationUrl || '',
+      imageUrl: !mediaIsVideo ? (form.ad.mediaUrl || '') : '',
+      videoUrl: mediaIsVideo ? form.ad.mediaUrl : '',
+      creativeData: isGoogle
+        ? {
+            headlines: (form.ad.headlines || []).filter(Boolean),
+            descriptions: (form.ad.descriptions || []).filter(Boolean),
+          }
+        : null,
+    };
+  };
+
+  const extractErrorMessage = (err) =>
+    err?.error || err?.response?.data?.error || err?.message || 'Something went wrong';
+
   const handleSaveDraft = async () => {
+    if (!form.adAccountId) {
+      toast.error('Please select an ad account');
+      setCurrentStep(1);
+      return;
+    }
     if (!form.name.trim()) {
       toast.error('Please enter a campaign name');
       setCurrentStep(2);
@@ -1173,21 +1365,18 @@ export default function CampaignCreate() {
     }
     try {
       setSaving(true);
-      const payload = buildPayload();
-      payload.status = 'draft';
-      const response = await campaignsAPI.create(payload);
+      const campaign = await campaignsAPI.create(buildCampaignPayload());
+      const id = campaign?.id || campaign?._id;
       toast.success('Campaign saved as draft');
-      const id = response?.campaign?._id || response?.campaign?.id || response?._id || response?.id;
       navigate(id ? `/campaigns/${id}` : '/campaigns');
     } catch (err) {
-      toast.error(err?.message || 'Failed to save campaign');
+      toast.error(extractErrorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
   const handlePublish = async () => {
-    // Validate all steps
     for (let step = 1; step <= 4; step++) {
       if (!validateStep(step)) {
         setCurrentStep(step);
@@ -1196,23 +1385,41 @@ export default function CampaignCreate() {
     }
     try {
       setPublishing(true);
-      const payload = buildPayload();
-      const response = await campaignsAPI.create(payload);
-      const id = response?.campaign?._id || response?.campaign?.id || response?._id || response?.id;
-      if (id) {
-        try {
-          await campaignsAPI.publish(id);
-          toast.success('Campaign published successfully');
-        } catch (pubErr) {
-          toast.success('Campaign created. Publishing may take a moment.');
-        }
-        navigate(`/campaigns/${id}`);
-      } else {
-        toast.success('Campaign created');
-        navigate('/campaigns');
+
+      // 1. Create the campaign
+      const campaign = await campaignsAPI.create(buildCampaignPayload());
+      const campaignId = campaign?.id || campaign?._id;
+      if (!campaignId) throw new Error('Campaign creation returned no id');
+
+      // 2. Create the ad set
+      const adSet = await adSetsAPI.create(buildAdSetPayload(campaignId));
+      const adSetId = adSet?.id || adSet?._id;
+      if (!adSetId) throw new Error('Ad set creation returned no id');
+
+      // 3. Create the ad (only if any ad content was provided)
+      const hasAdContent =
+        form.ad.headline ||
+        form.ad.description ||
+        (form.ad.headlines || []).some(Boolean) ||
+        form.ad.mediaUrl;
+      if (hasAdContent) {
+        await adsAPI.create(buildAdPayload(adSetId));
       }
+
+      // 4. Publish to the platform
+      try {
+        if (form.platform === 'meta') {
+          await metaAPI.publishCampaign(campaignId);
+        } else {
+          await campaignsAPI.publish(campaignId);
+        }
+        toast.success('Campaign published successfully');
+      } catch (pubErr) {
+        toast.error(`Saved, but publish failed: ${extractErrorMessage(pubErr)}`);
+      }
+      navigate(`/campaigns/${campaignId}`);
     } catch (err) {
-      toast.error(err?.message || 'Failed to create campaign');
+      toast.error(extractErrorMessage(err));
     } finally {
       setPublishing(false);
     }
@@ -1252,7 +1459,7 @@ export default function CampaignCreate() {
 
       {/* Step Content */}
       <AnimatePresence mode="wait">
-        {currentStep === 1 && <Step1 form={form} setForm={setForm} />}
+        {currentStep === 1 && <Step1 form={form} setForm={setForm} accounts={accounts} accountsLoading={accountsLoading} />}
         {currentStep === 2 && <Step2 form={form} setForm={setForm} />}
         {currentStep === 3 && (
           form.platform === 'google'
