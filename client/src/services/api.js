@@ -65,6 +65,7 @@ export const adsAPI = {
 export const metaAPI = {
   authUrl: () => api.get('/meta/auth-url'),
   accounts: () => api.get('/meta/accounts'),
+  refreshPages: (accountId, pageId) => api.post(`/meta/accounts/${accountId}/refresh-pages`, pageId ? { pageId } : {}),
   sync: (accountId) => api.post('/meta/sync', { accountId }),
   insights: (campaignId, params) => api.get(`/meta/insights/${campaignId}`, { params }),
   publishCampaign: (id) => api.post(`/meta/campaigns/${id}/publish`),

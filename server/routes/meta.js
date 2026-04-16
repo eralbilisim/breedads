@@ -28,7 +28,14 @@ async function getMetaConfig() {
 // GET /api/meta/auth-url
 router.get('/auth-url', async (req, res) => {
   const config = await getMetaConfig();
-  const scopes = ['ads_management', 'ads_read', 'business_management', 'pages_read_engagement'].join(',');
+  const scopes = [
+    'ads_management',
+    'ads_read',
+    'business_management',
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_ads',
+  ].join(',');
   const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${config.appId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&scope=${scopes}&response_type=code&state=${req.user.id}`;
   res.json({ authUrl });
 });
@@ -49,12 +56,26 @@ router.get('/callback', async (req, res, next) => {
     // Get long-lived token
     const longLivedToken = await metaAdsService.getLongLivedToken(tokenData.access_token);
 
-    // Get ad accounts
-    const accounts = await metaAdsService.getAdAccounts(longLivedToken.access_token);
+    // Get ad accounts and pages in parallel
+    const [accounts, pages] = await Promise.all([
+      metaAdsService.getAdAccounts(longLivedToken.access_token),
+      metaAdsService.getPages(longLivedToken.access_token).catch((err) => {
+        console.error('[meta] getPages failed:', err.response?.data?.error?.message || err.message);
+        return [];
+      }),
+    ]);
+
+    // Default page = first page the user administers. Users with multiple
+    // pages can later change it via a page picker (future UI).
+    const defaultPage = pages[0] || null;
 
     // Save each ad account
     const savedAccounts = [];
     for (const account of accounts) {
+      const tokenExpiresAt = longLivedToken.expires_in
+        ? new Date(Date.now() + longLivedToken.expires_in * 1000)
+        : null;
+
       const saved = await prisma.adAccount.upsert({
         where: {
           platform_accountId: {
@@ -64,11 +85,12 @@ router.get('/callback', async (req, res, next) => {
         },
         update: {
           accessToken: longLivedToken.access_token,
-          tokenExpiresAt: longLivedToken.expires_at
-            ? new Date(Date.now() + longLivedToken.expires_at * 1000)
-            : null,
+          tokenExpiresAt,
           accountName: account.name,
           isActive: true,
+          pageId: defaultPage?.id || undefined,
+          pageName: defaultPage?.name || undefined,
+          pageAccessToken: defaultPage?.access_token || undefined,
         },
         create: {
           userId: userId || req.user.id,
@@ -76,11 +98,12 @@ router.get('/callback', async (req, res, next) => {
           accountId: account.id,
           accountName: account.name,
           accessToken: longLivedToken.access_token,
-          tokenExpiresAt: longLivedToken.expires_at
-            ? new Date(Date.now() + longLivedToken.expires_at * 1000)
-            : null,
+          tokenExpiresAt,
           currency: account.currency || 'USD',
           timezone: account.timezone_name || 'UTC',
+          pageId: defaultPage?.id || null,
+          pageName: defaultPage?.name || null,
+          pageAccessToken: defaultPage?.access_token || null,
         },
       });
       savedAccounts.push(saved);
@@ -116,11 +139,53 @@ router.get('/accounts', async (req, res, next) => {
         currency: true,
         timezone: true,
         tokenExpiresAt: true,
+        pageId: true,
+        pageName: true,
         createdAt: true,
       },
     });
 
     res.json(accounts);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/meta/accounts/:id/refresh-pages
+// Refetches the connected user's Facebook Pages and updates this ad
+// account's default page. Useful for accounts connected before the
+// page field existed or when the user adds a new page.
+router.post('/accounts/:id/refresh-pages', async (req, res, next) => {
+  try {
+    const adAccount = await prisma.adAccount.findFirst({
+      where: { id: req.params.id, userId: req.user.id, platform: 'META' },
+    });
+    if (!adAccount) return res.status(404).json({ error: 'Ad account not found.' });
+
+    const pages = await metaAdsService.getPages(adAccount.accessToken);
+    const { pageId: preferred } = req.body || {};
+    const chosen = preferred
+      ? pages.find((p) => p.id === preferred) || pages[0]
+      : pages[0];
+
+    if (!chosen) {
+      return res.status(400).json({
+        error: 'No Facebook Page found. Make sure the connected user administers at least one page and the Meta app has pages_show_list / pages_read_engagement permissions.',
+        pages: [],
+      });
+    }
+
+    const updated = await prisma.adAccount.update({
+      where: { id: adAccount.id },
+      data: {
+        pageId: chosen.id,
+        pageName: chosen.name,
+        pageAccessToken: chosen.access_token || null,
+      },
+      select: { id: true, pageId: true, pageName: true },
+    });
+
+    res.json({ account: updated, pages });
   } catch (err) {
     next(err);
   }

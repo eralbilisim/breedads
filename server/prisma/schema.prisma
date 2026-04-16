@@ -45,6 +45,9 @@ model AdAccount {
   isActive        Boolean     @default(true)
   currency        String      @default("USD")
   timezone        String      @default("UTC")
+  pageId          String?
+  pageName        String?
+  pageAccessToken String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

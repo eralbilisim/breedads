@@ -539,6 +539,20 @@ function AdAccountsTab() {
     }
   };
 
+  const handleRefreshPages = async (accountId) => {
+    setSyncingId(accountId);
+    try {
+      const res = await metaAPI.refreshPages(accountId);
+      const name = res?.account?.pageName;
+      toast.success(name ? `Linked page: ${name}` : 'Pages refreshed');
+      loadAccounts();
+    } catch (err) {
+      toast.error(err?.error || err?.message || 'Failed to refresh pages');
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
   const handleDisconnect = (accountId) => {
     toast.error('Disconnect is disabled in demo mode');
   };
@@ -600,10 +614,22 @@ function AdAccountsTab() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 mt-0.5">
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                       <span className="text-xs text-dark-400">
                         ID: {account.accountId || account.account_id || aid}
                       </span>
+                      {account.platform === 'meta' && account.pageName && (
+                        <span className="text-xs text-dark-500 flex items-center gap-1">
+                          <Globe size={10} />
+                          Page: {account.pageName}
+                        </span>
+                      )}
+                      {account.platform === 'meta' && !account.pageId && (
+                        <span className="text-xs text-amber-400 flex items-center gap-1">
+                          <AlertTriangle size={10} />
+                          No page linked
+                        </span>
+                      )}
                       {account.lastSynced && (
                         <span className="text-xs text-dark-500 flex items-center gap-1">
                           <Clock size={10} />
@@ -615,6 +641,20 @@ function AdAccountsTab() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2">
+                    {account.platform === 'meta' && (
+                      <button
+                        onClick={() => handleRefreshPages(aid)}
+                        disabled={syncingId === aid}
+                        className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                          !account.pageId
+                            ? 'text-amber-400 hover:bg-amber-500/10'
+                            : 'text-dark-400 hover:text-white hover:bg-dark-700/50'
+                        }`}
+                        title={account.pageId ? 'Refresh Facebook page' : 'Link a Facebook page'}
+                      >
+                        <Globe size={16} />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleSync(account.platform, aid)}
                       disabled={syncingId === aid}

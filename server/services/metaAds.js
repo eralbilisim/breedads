@@ -78,6 +78,111 @@ async function getAdAccounts(accessToken) {
 }
 
 /**
+ * Get Pages the user administers. Each page has its own access_token
+ * which is required for creating ad creatives that post from that page.
+ */
+async function getPages(accessToken) {
+  const api = metaApi(accessToken);
+  const response = await api.get('/me/accounts', {
+    params: {
+      fields: 'id,name,access_token,category,tasks',
+      limit: 100,
+    },
+  });
+  return response.data.data || [];
+}
+
+/**
+ * Resolve an array of user-typed location strings into Meta's
+ * geo_locations targeting spec: { countries: [...], regions: [...], cities: [...] }.
+ *
+ * Inputs:
+ *  - 2-letter ISO country codes (e.g. "US", "TR") → countries[]
+ *  - anything else → resolved via Graph /search?type=adgeolocation,
+ *    then bucketed by result type (country / region / city).
+ *
+ * Falls back to { countries: ['US'] } when the list is empty or nothing resolves.
+ */
+async function resolveGeoLocations(api, locations) {
+  const fallback = { countries: ['US'] };
+  if (!Array.isArray(locations) || locations.length === 0) return fallback;
+
+  const countries = new Set();
+  const regions = [];
+  const cities = [];
+
+  for (const raw of locations) {
+    if (!raw || typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    // Direct ISO country codes
+    if (/^[A-Z]{2}$/.test(trimmed)) {
+      countries.add(trimmed);
+      continue;
+    }
+
+    try {
+      const res = await api.get('/search', {
+        params: {
+          type: 'adgeolocation',
+          q: trimmed,
+          location_types: JSON.stringify(['country', 'region', 'city']),
+          limit: 1,
+        },
+      });
+      const top = res.data?.data?.[0];
+      if (!top) continue;
+
+      if (top.type === 'country') {
+        countries.add(top.country_code || top.key);
+      } else if (top.type === 'region') {
+        regions.push({ key: String(top.key) });
+      } else if (top.type === 'city') {
+        cities.push({ key: String(top.key), radius: 10, distance_unit: 'mile' });
+      }
+    } catch (err) {
+      // Swallow per-location failures; log for observability
+      console.error(`[meta] geo resolve failed for "${trimmed}":`, err.response?.data?.error?.message || err.message);
+    }
+  }
+
+  const out = {};
+  if (countries.size) out.countries = [...countries];
+  if (regions.length) out.regions = regions;
+  if (cities.length) out.cities = cities;
+  return Object.keys(out).length ? out : fallback;
+}
+
+/**
+ * Upload a video to an ad account from a public URL. Meta returns
+ * a video_id that can be used in object_story_spec.video_data.
+ */
+async function uploadVideoFromUrl(adAccount, videoUrl) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.post(`/act_${adAccount.accountId}/advideos`, null, {
+    params: { file_url: videoUrl },
+  });
+  return response.data.id;
+}
+
+/**
+ * Upload an image by URL and get back an image_hash usable in creatives.
+ * Preferred over passing image_url directly, because hashes persist in
+ * the ad account's image library.
+ */
+async function uploadImageFromUrl(adAccount, imageUrl) {
+  const api = metaApi(adAccount.accessToken);
+  const response = await api.post(`/act_${adAccount.accountId}/adimages`, null, {
+    params: { url: imageUrl },
+  });
+  // Meta returns images keyed by the source URL → pick the first hash
+  const images = response.data?.images || {};
+  const first = Object.values(images)[0];
+  return first?.hash || null;
+}
+
+/**
  * Get all campaigns for an ad account.
  */
 async function getCampaigns(adAccount) {
@@ -172,48 +277,67 @@ async function createAdSet(adAccount, adSet) {
     billing_event: 'IMPRESSIONS',
   };
 
-  if (adSet.budget) {
-    params.daily_budget = Math.round(adSet.budget * 100);
-  }
-  if (adSet.bidAmount) {
-    params.bid_amount = Math.round(adSet.bidAmount * 100);
-  }
+  if (adSet.budget) params.daily_budget = Math.round(adSet.budget * 100);
+  if (adSet.bidAmount) params.bid_amount = Math.round(adSet.bidAmount * 100);
 
-  // Build targeting
+  // Build targeting. IMPORTANT: geo_locations must be a structured
+  // object { countries, regions, cities } — not a list of strings.
   const targeting = adSet.targeting || {};
-  params.targeting = JSON.stringify({
-    geo_locations: targeting.locations || { countries: ['US'] },
+  const geoLocations = await resolveGeoLocations(api, targeting.locations);
+
+  const gendersMap = { all: [1, 2], male: [1], female: [2] };
+  const genders = Array.isArray(targeting.genders)
+    ? targeting.genders
+    : gendersMap[targeting.gender] || [1, 2];
+
+  const targetingSpec = {
+    geo_locations: geoLocations,
     age_min: targeting.ageMin || 18,
     age_max: targeting.ageMax || 65,
-    genders: targeting.genders || [0],
-    interests: targeting.interests || [],
-    custom_audiences: targeting.customAudiences || [],
-    excluded_custom_audiences: targeting.excludedAudiences || [],
-  });
+    genders,
+  };
+
+  // Interests need Meta IDs; if the user typed plain strings, pass them as
+  // flexible_spec interests-by-name so Meta can match them server-side.
+  if (Array.isArray(targeting.interests) && targeting.interests.length) {
+    const interestObjs = targeting.interests.map((i) =>
+      typeof i === 'object' ? i : { name: String(i) }
+    );
+    targetingSpec.flexible_spec = [{ interests: interestObjs }];
+  }
+
+  if (Array.isArray(targeting.behaviors) && targeting.behaviors.length) {
+    targetingSpec.behaviors = targeting.behaviors.map((b) =>
+      typeof b === 'object' ? b : { name: String(b) }
+    );
+  }
+
+  if (Array.isArray(targeting.customAudiences) && targeting.customAudiences.length) {
+    targetingSpec.custom_audiences = targeting.customAudiences.map((id) =>
+      typeof id === 'object' ? id : { id: String(id) }
+    );
+  }
+
+  if (Array.isArray(targeting.excludedAudiences) && targeting.excludedAudiences.length) {
+    targetingSpec.excluded_custom_audiences = targeting.excludedAudiences.map((id) =>
+      typeof id === 'object' ? id : { id: String(id) }
+    );
+  }
+
+  params.targeting = JSON.stringify(targetingSpec);
 
   // Placements
-  if (adSet.placements) {
-    const placements = adSet.placements;
-    if (placements.automatic !== false) {
-      // Automatic placements (default)
-    } else {
-      params.publisher_platforms = JSON.stringify(placements.platforms || ['facebook', 'instagram']);
-      if (placements.positions) {
-        params.facebook_positions = JSON.stringify(placements.positions.facebook || ['feed']);
-        params.instagram_positions = JSON.stringify(placements.positions.instagram || ['stream']);
-      }
+  if (adSet.placements && adSet.placements.automatic === false) {
+    params.publisher_platforms = JSON.stringify(adSet.placements.platforms || ['facebook', 'instagram']);
+    if (adSet.placements.positions) {
+      params.facebook_positions = JSON.stringify(adSet.placements.positions.facebook || ['feed']);
+      params.instagram_positions = JSON.stringify(adSet.placements.positions.instagram || ['stream']);
     }
   }
 
   // Schedule
-  if (adSet.schedule) {
-    if (adSet.schedule.startTime) {
-      params.start_time = adSet.schedule.startTime;
-    }
-    if (adSet.schedule.endTime) {
-      params.end_time = adSet.schedule.endTime;
-    }
-  }
+  if (adSet.schedule?.startTime) params.start_time = adSet.schedule.startTime;
+  if (adSet.schedule?.endTime) params.end_time = adSet.schedule.endTime;
 
   const response = await api.post(`/act_${adAccount.accountId}/adsets`, null, { params });
   return { id: response.data.id, data: response.data };
@@ -225,51 +349,95 @@ async function createAdSet(adAccount, adSet) {
 async function createAd(adAccount, ad) {
   const api = metaApi(adAccount.accessToken);
 
-  // First create the ad creative
-  const creativeParams = {
-    name: `${ad.name} Creative`,
-  };
+  const pageId = adAccount.pageId || process.env.META_PAGE_ID;
+  if (!pageId) {
+    throw new Error(
+      'No Facebook Page linked to this ad account. Reconnect the Meta account so BreedAds can fetch your pages.'
+    );
+  }
+
+  const creativeParams = { name: `${ad.name} Creative` };
+  const ctaType = ad.callToAction || 'LEARN_MORE';
 
   if (ad.format === 'IMAGE' || ad.format === 'STORIES') {
+    // Prefer uploading the image to get an image_hash (works for hosts
+    // Meta can't fetch directly). Fall back to image_url.
+    let imageHash = null;
+    if (ad.imageUrl && /^https?:\/\//i.test(ad.imageUrl)) {
+      try {
+        imageHash = await uploadImageFromUrl(adAccount, ad.imageUrl);
+      } catch (err) {
+        console.error('[meta] image upload failed, falling back to image_url:', err.response?.data?.error?.message || err.message);
+      }
+    }
+
+    const linkData = {
+      link: ad.destinationUrl,
+      message: ad.primaryText || '',
+      name: ad.headline || '',
+      description: ad.description || '',
+      call_to_action: { type: ctaType, value: ad.destinationUrl ? { link: ad.destinationUrl } : undefined },
+    };
+    if (imageHash) linkData.image_hash = imageHash;
+    else if (ad.imageUrl) linkData.image_url = ad.imageUrl;
+
     creativeParams.object_story_spec = JSON.stringify({
-      page_id: adAccount.pageId || process.env.META_PAGE_ID,
-      link_data: {
-        image_url: ad.imageUrl,
-        link: ad.destinationUrl,
-        message: ad.primaryText || '',
-        name: ad.headline || '',
-        description: ad.description || '',
-        call_to_action: {
-          type: ad.callToAction || 'LEARN_MORE',
-        },
-      },
+      page_id: pageId,
+      link_data: linkData,
     });
   } else if (ad.format === 'VIDEO') {
+    // If the user gave a video URL, upload it first to get a video_id.
+    // Otherwise assume they passed an existing Meta video_id via videoUrl.
+    let videoId = ad.videoId;
+    if (!videoId && ad.videoUrl) {
+      if (/^https?:\/\//i.test(ad.videoUrl)) {
+        videoId = await uploadVideoFromUrl(adAccount, ad.videoUrl);
+      } else {
+        videoId = ad.videoUrl;
+      }
+    }
+
     creativeParams.object_story_spec = JSON.stringify({
-      page_id: adAccount.pageId || process.env.META_PAGE_ID,
+      page_id: pageId,
       video_data: {
-        video_id: ad.videoUrl,
+        video_id: videoId,
         title: ad.headline || '',
         message: ad.primaryText || '',
         link_description: ad.description || '',
         call_to_action: {
-          type: ad.callToAction || 'LEARN_MORE',
-          value: { link: ad.destinationUrl },
+          type: ctaType,
+          value: ad.destinationUrl ? { link: ad.destinationUrl } : undefined,
         },
       },
     });
   } else if (ad.format === 'CAROUSEL') {
-    const carouselCards = ad.creativeData?.cards || [];
+    const rawCards = ad.creativeData?.cards || [];
+    const childAttachments = [];
+    for (const card of rawCards) {
+      let imageHash = null;
+      if (card.imageUrl && /^https?:\/\//i.test(card.imageUrl)) {
+        try {
+          imageHash = await uploadImageFromUrl(adAccount, card.imageUrl);
+        } catch (err) {
+          console.error('[meta] carousel card image upload failed:', err.message);
+        }
+      }
+      const attachment = {
+        link: card.link || ad.destinationUrl,
+        name: card.headline || '',
+        description: card.description || '',
+      };
+      if (imageHash) attachment.image_hash = imageHash;
+      else if (card.imageUrl) attachment.image_url = card.imageUrl;
+      childAttachments.push(attachment);
+    }
+
     creativeParams.object_story_spec = JSON.stringify({
-      page_id: adAccount.pageId || process.env.META_PAGE_ID,
+      page_id: pageId,
       link_data: {
+        link: ad.destinationUrl,
         message: ad.primaryText || '',
-        child_attachments: carouselCards.map(card => ({
-          link: card.link || ad.destinationUrl,
-          image_url: card.imageUrl,
-          name: card.headline || '',
-          description: card.description || '',
-        })),
+        child_attachments: childAttachments,
       },
     });
   }
@@ -278,7 +446,6 @@ async function createAd(adAccount, ad) {
     params: creativeParams,
   });
 
-  // Then create the ad
   const adResponse = await api.post(`/act_${adAccount.accountId}/ads`, null, {
     params: {
       name: ad.name,
@@ -427,6 +594,7 @@ module.exports = {
   exchangeCodeForToken,
   getLongLivedToken,
   getAdAccounts,
+  getPages,
   getCampaigns,
   createCampaign,
   updateCampaign,
@@ -445,4 +613,7 @@ module.exports = {
   updateAd,
   deleteAd,
   getAccountInsights,
+  resolveGeoLocations,
+  uploadVideoFromUrl,
+  uploadImageFromUrl,
 };
