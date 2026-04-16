@@ -98,22 +98,22 @@ export const googleAPI = {
 
 // Automation
 export const automationAPI = {
-  list: (params) => api.get('/automation/rules', { params }),
-  get: (id) => api.get(`/automation/rules/${id}`),
-  create: (data) => api.post('/automation/rules', data),
-  update: (id, data) => api.put(`/automation/rules/${id}`, data),
-  delete: (id) => api.delete(`/automation/rules/${id}`),
-  execute: (id) => api.post(`/automation/rules/${id}/execute`),
-  logs: (id, params) => api.get(`/automation/rules/${id}/logs`, { params }),
+  list: (params) => api.get('/automation', { params }),
+  get: (id) => api.get(`/automation/${id}`),
+  create: (data) => api.post('/automation', data),
+  update: (id, data) => api.put(`/automation/${id}`, data),
+  delete: (id) => api.delete(`/automation/${id}`),
+  execute: (id) => api.post(`/automation/${id}/execute`),
+  logs: (id, params) => api.get(`/automation/${id}/logs`, { params }),
 };
 
 // Creatives (AI)
 export const creativesAPI = {
-  list: (params) => api.get('/ai/creatives', { params }),
-  generateImage: (data) => api.post('/ai/creatives/image', data),
-  generateCopy: (data) => api.post('/ai/creatives/copy', data),
-  generateVariants: (id, data) => api.post(`/ai/creatives/${id}/variants`, data),
-  delete: (id) => api.delete(`/ai/creatives/${id}`),
+  list: (params) => api.get('/creatives', { params }),
+  generateImage: (data) => api.post('/creatives/generate-image', data),
+  generateCopy: (data) => api.post('/creatives/generate-copy', data),
+  generateVariants: (data) => api.post('/creatives/generate-variants', data),
+  delete: (id) => api.delete(`/creatives/${id}`),
 };
 
 // Competitors

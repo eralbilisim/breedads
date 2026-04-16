@@ -973,24 +973,28 @@ const VARIANT_TYPES = [
 ];
 
 function ABTestingTab() {
-  const [adId, setAdId] = useState('');
+  const [headline, setHeadline] = useState('');
+  const [description, setDescription] = useState('');
+  const [primaryText, setPrimaryText] = useState('');
   const [variantType, setVariantType] = useState('headlines');
   const [variantCount, setVariantCount] = useState(3);
   const [generating, setGenerating] = useState(false);
   const [variants, setVariants] = useState([]);
 
   const handleGenerate = async () => {
-    if (!adId.trim()) {
-      toast.error('Please enter a campaign or ad ID');
+    if (!headline.trim()) {
+      toast.error('Please enter the original headline');
       return;
     }
     try {
       setGenerating(true);
-      const response = await creativesAPI.generateVariants(adId, {
+      const response = await creativesAPI.generateVariants({
+        headline,
+        description,
+        primaryText,
         count: variantCount,
-        type: variantType,
       });
-      const data = response?.data || response?.variants || response;
+      const data = response?.variants || response?.data || response;
       setVariants(Array.isArray(data) ? data : [data]);
       toast.success('Variants generated!');
     } catch (err) {
@@ -1015,13 +1019,25 @@ function ABTestingTab() {
             A/B Test Setup
           </h3>
 
-          {/* Ad Selection */}
+          {/* Original Ad Copy */}
           <Input
-            label="Campaign / Ad ID"
-            placeholder="Enter the campaign or ad ID to create variants for..."
-            value={adId}
-            onChange={(e) => setAdId(e.target.value)}
+            label="Original Headline"
+            placeholder="Enter the current ad headline..."
+            value={headline}
+            onChange={(e) => setHeadline(e.target.value)}
             icon={Megaphone}
+          />
+          <Input
+            label="Description (optional)"
+            placeholder="Short description line..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <Input
+            label="Primary Text (optional)"
+            placeholder="Longer ad body copy..."
+            value={primaryText}
+            onChange={(e) => setPrimaryText(e.target.value)}
           />
 
           {/* Variant Type */}
@@ -1077,7 +1093,7 @@ function ABTestingTab() {
               icon={generating ? undefined : FlaskConical}
               loading={generating}
               onClick={handleGenerate}
-              disabled={!adId.trim()}
+              disabled={!headline.trim()}
             >
               {generating ? 'Generating Variants...' : `Generate ${variantCount} Variants`}
             </Button>
