@@ -490,15 +490,16 @@ function AdAccountsTab() {
     setConnectingMeta(true);
     try {
       const res = await metaAPI.authUrl();
-      const url = res.data?.url || res.url || res.data;
+      const url = res?.authUrl || res?.url || res?.data?.authUrl || res?.data?.url;
       if (url) {
-        window.open(url, '_blank', 'width=600,height=700');
-        toast.success('Complete authentication in the new window');
+        // Full-page redirect is more reliable than popup (popup blockers,
+        // Facebook login flows that break out of iframes/popups).
+        window.location.href = url;
       } else {
-        toast.error('Could not get Meta auth URL');
+        toast.error('Could not get Meta auth URL. Check META_APP_ID on the server.');
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to initiate Meta connection');
+      toast.error(err?.error || err?.message || 'Failed to initiate Meta connection');
     } finally {
       setConnectingMeta(false);
     }
@@ -508,15 +509,14 @@ function AdAccountsTab() {
     setConnectingGoogle(true);
     try {
       const res = await googleAPI.authUrl();
-      const url = res.data?.url || res.url || res.data;
+      const url = res?.authUrl || res?.url || res?.data?.authUrl || res?.data?.url;
       if (url) {
-        window.open(url, '_blank', 'width=600,height=700');
-        toast.success('Complete authentication in the new window');
+        window.location.href = url;
       } else {
-        toast.error('Could not get Google auth URL');
+        toast.error('Could not get Google auth URL. Check GOOGLE_CLIENT_ID on the server.');
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to initiate Google connection');
+      toast.error(err?.error || err?.message || 'Failed to initiate Google connection');
     } finally {
       setConnectingGoogle(false);
     }
