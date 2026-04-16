@@ -75,8 +75,16 @@
     "hasAccount": "Already have an account?"
   },
   "nav": {
+    "sectionGeneral": "General",
+    "sectionMeta": "Meta Ads",
+    "sectionGoogle": "Google Ads",
+    "sectionTools": "Tools",
     "dashboard": "Dashboard",
-    "campaigns": "Campaigns",
+    "campaigns": "All Campaigns",
+    "metaCampaigns": "Campaigns",
+    "metaAudiences": "Audiences",
+    "metaCreatives": "Creatives",
+    "googleCampaigns": "Campaigns",
     "creativeStudio": "Creative Studio",
     "automation": "Automation",
     "competitors": "Competitors",

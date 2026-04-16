@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -346,6 +346,7 @@ function EmptyState({ hasFilters, onClearFilters, onCreate }) {
 
 export default function Campaigns() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Data state
   const [campaigns, setCampaigns] = useState([]);
@@ -353,9 +354,28 @@ export default function Campaigns() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Filter state
+  // Filter state (platform syncs with URL ?platform=)
+  const urlPlatform = searchParams.get('platform');
   const [search, setSearch] = useState('');
-  const [platform, setPlatform] = useState('all');
+  const [platform, setPlatform] = useState(
+    urlPlatform === 'meta' || urlPlatform === 'google' ? urlPlatform : 'all'
+  );
+
+  // Sync platform state ↔ URL
+  useEffect(() => {
+    const p = searchParams.get('platform');
+    const next = p === 'meta' || p === 'google' ? p : 'all';
+    if (next !== platform) setPlatform(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const updatePlatform = (next) => {
+    setPlatform(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === 'all') params.delete('platform');
+    else params.set('platform', next);
+    setSearchParams(params, { replace: true });
+  };
   const [status, setStatus] = useState('all');
   const [sortBy, setSortBy] = useState('createdAt');
   const [page, setPage] = useState(1);
@@ -501,11 +521,20 @@ export default function Campaigns() {
 
   const clearFilters = () => {
     setSearch('');
-    setPlatform('all');
+    updatePlatform('all');
     setStatus('all');
     setSortBy('createdAt');
     setPage(1);
   };
+
+  const pageTitle =
+    platform === 'meta' ? 'Meta Campaigns' : platform === 'google' ? 'Google Campaigns' : 'Campaigns';
+  const pageSubtitle =
+    platform === 'meta'
+      ? 'Manage your Facebook & Instagram ad campaigns'
+      : platform === 'google'
+      ? 'Manage your Google Ads campaigns'
+      : 'Manage your advertising campaigns across all platforms';
 
   const hasFilters = search || platform !== 'all' || status !== 'all';
 
@@ -520,9 +549,9 @@ export default function Campaigns() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Campaigns</h1>
+          <h1 className="text-2xl font-bold text-white">{pageTitle}</h1>
           <p className="text-dark-400 text-sm mt-1">
-            Manage your advertising campaigns across all platforms
+            {pageSubtitle}
             {!loading && totalCount > 0 && (
               <span className="text-dark-500 ml-1">({totalCount} total)</span>
             )}
@@ -552,7 +581,7 @@ export default function Campaigns() {
           {PLATFORM_FILTERS.map((pf) => (
             <button
               key={pf.id}
-              onClick={() => setPlatform(pf.id)}
+              onClick={() => updatePlatform(pf.id)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 whitespace-nowrap ${
                 platform === pf.id
                   ? 'bg-gradient-to-r from-brand-600 to-purple-600 text-white shadow-sm'

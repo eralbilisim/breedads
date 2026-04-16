@@ -75,8 +75,16 @@
     "hasAccount": "Zaten hesabınız var mı?"
   },
   "nav": {
+    "sectionGeneral": "Genel",
+    "sectionMeta": "Meta Ads",
+    "sectionGoogle": "Google Ads",
+    "sectionTools": "Araçlar",
     "dashboard": "Kontrol Paneli",
-    "campaigns": "Kampanyalar",
+    "campaigns": "Tüm Kampanyalar",
+    "metaCampaigns": "Kampanyalar",
+    "metaAudiences": "Kitleler",
+    "metaCreatives": "Kreatifler",
+    "googleCampaigns": "Kampanyalar",
     "creativeStudio": "Kreatif Stüdyo",
     "automation": "Otomasyon",
     "competitors": "Rakipler",

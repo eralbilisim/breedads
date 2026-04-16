@@ -14,6 +14,7 @@ import Automation from './pages/Automation';
 import Competitors from './pages/Competitors';
 import LandingPages from './pages/LandingPages';
 import Settings from './pages/Settings';
+import MetaAudiences from './pages/MetaAudiences';
 
 // Protected Route Wrapper
 function ProtectedRoute({ children }) {
@@ -309,6 +310,7 @@ export default function App() {
           <Route path="landing-pages" element={<LandingPages />} />
           <Route path="landing-pages/:id" element={<LandingPages />} />
           <Route path="analytics" element={<Analytics />} />
+          <Route path="meta/audiences" element={<MetaAudiences />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 
