@@ -6,65 +6,57 @@ const googleAdsService = require('../services/googleAds');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-router.use(authenticate);
-
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/google/callback';
 
-// GET /api/google/auth-url
-router.get('/auth-url', (req, res) => {
-  const scopes = encodeURIComponent('https://www.googleapis.com/auth/adwords');
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=${scopes}&access_type=offline&prompt=consent&state=${req.user.id}`;
-
-  res.json({ authUrl });
-});
-
-// GET /api/google/callback
+// GET /api/google/callback — unauthenticated (Google redirects with no
+// bearer token; we identify the user via the `state` parameter).
 router.get('/callback', async (req, res, next) => {
   try {
-    const { code, state: userId } = req.query;
+    const { code, state: userId, error, error_description } = req.query;
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
+    if (error) {
+      return res.redirect(`${clientUrl}/settings?tab=accounts&google_error=${encodeURIComponent(error_description || error)}`);
+    }
     if (!code) {
-      return res.status(400).json({ error: 'Authorization code is required.' });
+      return res.redirect(`${clientUrl}/settings?tab=accounts&google_error=missing_code`);
+    }
+    if (!userId) {
+      return res.redirect(`${clientUrl}/settings?tab=accounts&google_error=missing_state`);
     }
 
     const tokenData = await googleAdsService.exchangeCodeForToken(code, GOOGLE_REDIRECT_URI);
-
-    // Get accessible customer IDs
     const customers = await googleAdsService.getAccessibleCustomers(tokenData.access_token);
 
     const savedAccounts = [];
     for (const customerId of customers) {
-      // Get customer details
       const details = await googleAdsService.getCustomerDetails(tokenData.access_token, customerId);
+      const tokenExpiresAt = tokenData.expires_in
+        ? new Date(Date.now() + tokenData.expires_in * 1000)
+        : null;
 
       const saved = await prisma.adAccount.upsert({
         where: {
-          platform_accountId: {
-            platform: 'GOOGLE',
-            accountId: customerId,
-          },
+          platform_accountId: { platform: 'GOOGLE', accountId: customerId },
         },
         update: {
+          userId,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token || undefined,
-          tokenExpiresAt: tokenData.expires_in
-            ? new Date(Date.now() + tokenData.expires_in * 1000)
-            : null,
+          tokenExpiresAt,
           accountName: details.descriptiveName || customerId,
           isActive: true,
         },
         create: {
-          userId: userId || req.user.id,
+          userId,
           platform: 'GOOGLE',
           accountId: customerId,
           accountName: details.descriptiveName || customerId,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token || null,
-          tokenExpiresAt: tokenData.expires_in
-            ? new Date(Date.now() + tokenData.expires_in * 1000)
-            : null,
+          tokenExpiresAt,
           currency: details.currencyCode || 'USD',
           timezone: details.timeZone || 'UTC',
         },
@@ -74,18 +66,31 @@ router.get('/callback', async (req, res, next) => {
 
     await prisma.notification.create({
       data: {
-        userId: userId || req.user.id,
+        userId,
         title: 'Google Ads Connected',
         message: `Successfully connected ${savedAccounts.length} Google Ads account(s).`,
         type: 'SUCCESS',
       },
     });
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    res.redirect(`${clientUrl}/settings?google=connected`);
+    res.redirect(`${clientUrl}/settings?tab=accounts&google=connected`);
   } catch (err) {
-    next(err);
+    console.error('[google] callback failed:', err.response?.data?.error || err);
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const msg = err.response?.data?.error_description || err.response?.data?.error?.message || err.message || 'unknown';
+    res.redirect(`${clientUrl}/settings?tab=accounts&google_error=${encodeURIComponent(msg)}`);
   }
+});
+
+// All routes below require authentication
+router.use(authenticate);
+
+// GET /api/google/auth-url
+router.get('/auth-url', (req, res) => {
+  const scopes = encodeURIComponent('https://www.googleapis.com/auth/adwords');
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=${scopes}&access_type=offline&prompt=consent&state=${req.user.id}`;
+
+  res.json({ authUrl });
 });
 
 // GET /api/google/accounts

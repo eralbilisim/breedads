@@ -6,8 +6,6 @@ const metaAdsService = require('../services/metaAds');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-router.use(authenticate);
-
 async function getMetaConfig() {
   try {
     const settings = await prisma.appSettings.findUnique({ where: { id: 'app_settings' } });
@@ -25,38 +23,29 @@ async function getMetaConfig() {
   }
 }
 
-// GET /api/meta/auth-url
-router.get('/auth-url', async (req, res) => {
-  const config = await getMetaConfig();
-  const scopes = [
-    'ads_management',
-    'ads_read',
-    'business_management',
-    'pages_show_list',
-    'pages_read_engagement',
-    'pages_manage_ads',
-  ].join(',');
-  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${config.appId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&scope=${scopes}&response_type=code&state=${req.user.id}`;
-  res.json({ authUrl });
-});
-
-// GET /api/meta/callback
+// GET /api/meta/callback — Facebook redirects here after OAuth. This hit
+// comes from Facebook with no user token, so the route must stay outside
+// the authenticate middleware. We identify the user via the `state`
+// parameter that we planted when we built the auth URL.
 router.get('/callback', async (req, res, next) => {
   try {
-    const { code, state: userId } = req.query;
+    const { code, state: userId, error, error_description } = req.query;
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
+    if (error) {
+      return res.redirect(`${clientUrl}/settings?tab=accounts&meta_error=${encodeURIComponent(error_description || error)}`);
+    }
     if (!code) {
-      return res.status(400).json({ error: 'Authorization code is required.' });
+      return res.redirect(`${clientUrl}/settings?tab=accounts&meta_error=missing_code`);
+    }
+    if (!userId) {
+      return res.redirect(`${clientUrl}/settings?tab=accounts&meta_error=missing_state`);
     }
 
-    // Exchange code for access token
     const config = await getMetaConfig();
     const tokenData = await metaAdsService.exchangeCodeForToken(code, config.redirectUri);
-
-    // Get long-lived token
     const longLivedToken = await metaAdsService.getLongLivedToken(tokenData.access_token);
 
-    // Get ad accounts and pages in parallel
     const [accounts, pages] = await Promise.all([
       metaAdsService.getAdAccounts(longLivedToken.access_token),
       metaAdsService.getPages(longLivedToken.access_token).catch((err) => {
@@ -65,25 +54,19 @@ router.get('/callback', async (req, res, next) => {
       }),
     ]);
 
-    // Default page = first page the user administers. Users with multiple
-    // pages can later change it via a page picker (future UI).
     const defaultPage = pages[0] || null;
+    const tokenExpiresAt = longLivedToken.expires_in
+      ? new Date(Date.now() + longLivedToken.expires_in * 1000)
+      : null;
 
-    // Save each ad account
     const savedAccounts = [];
     for (const account of accounts) {
-      const tokenExpiresAt = longLivedToken.expires_in
-        ? new Date(Date.now() + longLivedToken.expires_in * 1000)
-        : null;
-
       const saved = await prisma.adAccount.upsert({
         where: {
-          platform_accountId: {
-            platform: 'META',
-            accountId: account.id,
-          },
+          platform_accountId: { platform: 'META', accountId: account.id },
         },
         update: {
+          userId,
           accessToken: longLivedToken.access_token,
           tokenExpiresAt,
           accountName: account.name,
@@ -93,7 +76,7 @@ router.get('/callback', async (req, res, next) => {
           pageAccessToken: defaultPage?.access_token || undefined,
         },
         create: {
-          userId: userId || req.user.id,
+          userId,
           platform: 'META',
           accountId: account.id,
           accountName: account.name,
@@ -111,19 +94,38 @@ router.get('/callback', async (req, res, next) => {
 
     await prisma.notification.create({
       data: {
-        userId: userId || req.user.id,
+        userId,
         title: 'Meta Ads Connected',
         message: `Successfully connected ${savedAccounts.length} Meta ad account(s).`,
         type: 'SUCCESS',
       },
     });
 
-    // Redirect to frontend
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    res.redirect(`${clientUrl}/settings?meta=connected`);
+    res.redirect(`${clientUrl}/settings?tab=accounts&meta=connected`);
   } catch (err) {
-    next(err);
+    console.error('[meta] callback failed:', err.response?.data?.error || err);
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const msg = err.response?.data?.error?.message || err.message || 'unknown';
+    res.redirect(`${clientUrl}/settings?tab=accounts&meta_error=${encodeURIComponent(msg)}`);
   }
+});
+
+// All routes below this require authentication
+router.use(authenticate);
+
+// GET /api/meta/auth-url
+router.get('/auth-url', async (req, res) => {
+  const config = await getMetaConfig();
+  const scopes = [
+    'ads_management',
+    'ads_read',
+    'business_management',
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_ads',
+  ].join(',');
+  const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${config.appId}&redirect_uri=${encodeURIComponent(config.redirectUri)}&scope=${scopes}&response_type=code&state=${req.user.id}`;
+  res.json({ authUrl });
 });
 
 // GET /api/meta/accounts
