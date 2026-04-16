@@ -156,6 +156,47 @@ const insightIcons = {
   default: { icon: Zap, color: 'text-purple-400', bg: 'bg-purple-500/10' },
 };
 
+function normalizeInsights(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+
+  const items = [];
+  const { insights, recommendations, alerts } = payload;
+
+  if (Array.isArray(alerts)) {
+    alerts.forEach((a, i) => {
+      items.push({
+        id: `alert-${i}`,
+        type: a.type === 'warning' ? 'warning' : a.type === 'success' ? 'success' : 'opportunity',
+        title: a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Alert',
+        description: a.message || '',
+      });
+    });
+  }
+
+  if (typeof insights === 'string' && insights.trim()) {
+    items.push({
+      id: 'summary',
+      type: 'opportunity',
+      title: 'Summary',
+      description: insights,
+    });
+  }
+
+  if (Array.isArray(recommendations)) {
+    recommendations.forEach((r, i) => {
+      items.push({
+        id: `rec-${i}`,
+        type: 'opportunity',
+        title: 'Recommendation',
+        description: typeof r === 'string' ? r : r?.message || '',
+      });
+    });
+  }
+
+  return items;
+}
+
 function InsightItem({ insight }) {
   const config = insightIcons[insight.type] || insightIcons.default;
   const Icon = config.icon;
@@ -253,9 +294,7 @@ export default function Dashboard() {
         setDashboard(dashData.value);
       }
       if (insightsData.status === 'fulfilled') {
-        setInsights(
-          Array.isArray(insightsData.value) ? insightsData.value : insightsData.value?.insights || []
-        );
+        setInsights(normalizeInsights(insightsData.value));
       }
     } catch (err) {
       setError('Failed to load dashboard data');
